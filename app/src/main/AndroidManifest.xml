@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Depolama izni GEREKMİYOR: dosyalar Storage Access Framework (SAF)
+        üzerinden ACTION_OPEN_DOCUMENT ile açılıyor. Bu, Android'in güncel
+        (Scoped Storage / Android 13+) önerdiği yöntemdir ve
+        READ_EXTERNAL_STORAGE / READ_MEDIA_* izinlerine ihtiyaç duymaz.
+    -->
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.EpubPdfReader"
+        android:enableOnBackInvokedCallback="true"
+        android:localeConfig="@xml/locales_config">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.EpubPdfReader"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Sistemden doğrudan .pdf / .epub dosyası ile açılabilme -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

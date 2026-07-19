@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Kitaplık</string>
+    <string name="open_pdf">PDF Aç</string>
+    <string name="open_epub">EPUB Aç</string>
+    <string name="home_title">Kitaplığım</string>
+    <string name="loading">Yükleniyor…</string>
+    <string name="error_loading">Dosya açılamadı</string>
+    <string name="next_chapter">Sonraki Bölüm</string>
+    <string name="prev_chapter">Önceki Bölüm</string>
+</resources>
