@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -156,7 +155,8 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                         // sadece görsel olarak ısıtan yarı saydam bir katman.
                         if (readingMode == ReadingMode.SEPIA) {
                             Box(
-                                modifier = matchParentSize()
+                                modifier = Modifier
+                                    .matchParentSize()
                                     .background(Color(0xFFF4E9D0).copy(alpha = 0.28f))
                             )
                         }
