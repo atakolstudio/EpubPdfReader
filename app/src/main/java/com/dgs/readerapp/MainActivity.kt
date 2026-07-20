@@ -14,12 +14,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.dgs.readerapp.epub.EpubViewerScreen
 import com.dgs.readerapp.pdf.PdfViewerScreen
+import com.dgs.readerapp.tiff.TiffViewerScreen
 import com.dgs.readerapp.ui.theme.EpubPdfReaderTheme
 
 private sealed class Screen {
     data object Home : Screen()
     data class Pdf(val uri: Uri) : Screen()
     data class Epub(val uri: Uri) : Screen()
+    data class Tiff(val uri: Uri) : Screen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -28,8 +30,9 @@ class MainActivity : ComponentActivity() {
         // Modern kenardan kenara (edge-to-edge) görünüm - Android 15 (SDK 35+) zorunlu kılıyor
         enableEdgeToEdge()
 
-        // Uygulama .pdf / .epub dosyasıyla açıldıysa (VIEW intent) ilgili ekranı aç
+        // Uygulama .pdf / .epub / .tiff dosyasıyla açıldıysa (VIEW intent) ilgili ekranı aç
         val viewUri: Uri? = intent?.data
+        val viewType: String? = intent?.type
 
         setContent {
             EpubPdfReaderTheme {
@@ -37,7 +40,8 @@ class MainActivity : ComponentActivity() {
                     mutableStateOf<Screen>(
                         when {
                             viewUri == null -> Screen.Home
-                            intent?.type == "application/epub+zip" -> Screen.Epub(viewUri)
+                            viewType == "application/epub+zip" -> Screen.Epub(viewUri)
+                            viewType == "image/tiff" || viewType == "image/tif" -> Screen.Tiff(viewUri)
                             else -> Screen.Pdf(viewUri)
                         }
                     )
@@ -47,13 +51,18 @@ class MainActivity : ComponentActivity() {
                     when (val current = screen) {
                         is Screen.Home -> HomeScreen(
                             onPdfPicked = { uri -> screen = Screen.Pdf(uri) },
-                            onEpubPicked = { uri -> screen = Screen.Epub(uri) }
+                            onEpubPicked = { uri -> screen = Screen.Epub(uri) },
+                            onTiffPicked = { uri -> screen = Screen.Tiff(uri) }
                         )
                         is Screen.Pdf -> PdfViewerScreen(
                             uri = current.uri,
                             onBack = { screen = Screen.Home }
                         )
                         is Screen.Epub -> EpubViewerScreen(
+                            uri = current.uri,
+                            onBack = { screen = Screen.Home }
+                        )
+                        is Screen.Tiff -> TiffViewerScreen(
                             uri = current.uri,
                             onBack = { screen = Screen.Home }
                         )

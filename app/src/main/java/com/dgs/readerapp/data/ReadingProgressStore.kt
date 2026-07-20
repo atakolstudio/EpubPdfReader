@@ -26,6 +26,14 @@ class ReadingProgressStore(context: Context) {
         prefs.edit { putInt(pdfKey(uriKey), pageIndex) }
     }
 
+    fun getTiffPageIndex(uriKey: String): Int =
+        prefs.getInt(tiffKey(uriKey), 0)
+
+    fun saveTiffPageIndex(uriKey: String, pageIndex: Int) {
+        prefs.edit { putInt(tiffKey(uriKey), pageIndex) }
+    }
+
     private fun epubKey(uriKey: String) = "epub_chapter::$uriKey"
     private fun pdfKey(uriKey: String) = "pdf_page::$uriKey"
+    private fun tiffKey(uriKey: String) = "tiff_page::$uriKey"
 }

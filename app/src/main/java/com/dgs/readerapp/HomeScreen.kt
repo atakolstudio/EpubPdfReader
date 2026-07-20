@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
@@ -28,7 +29,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun HomeScreen(
     onPdfPicked: (Uri) -> Unit,
-    onEpubPicked: (Uri) -> Unit
+    onEpubPicked: (Uri) -> Unit,
+    onTiffPicked: (Uri) -> Unit
 ) {
     val pdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -37,6 +39,10 @@ fun HomeScreen(
     val epubLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(onEpubPicked) }
+
+    val tiffLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(onTiffPicked) }
 
     Scaffold(
         topBar = {
@@ -73,6 +79,21 @@ fun HomeScreen(
                 Icon(Icons.Filled.MenuBook, contentDescription = null)
                 Text(
                     text = "  " + stringResource(R.string.open_epub),
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(8.dp))
+
+            Button(
+                onClick = {
+                    tiffLauncher.launch(arrayOf("image/tiff"))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Filled.Image, contentDescription = null)
+                Text(
+                    text = "  " + stringResource(R.string.open_tiff),
                     modifier = Modifier.padding(start = 4.dp)
                 )
             }

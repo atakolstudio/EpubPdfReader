@@ -72,6 +72,7 @@ dependencies {
 
     // WebView compose helper for EPUB rendering
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("io.github.beyka:Android-TiffBitmapFactory:0.9.9.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
