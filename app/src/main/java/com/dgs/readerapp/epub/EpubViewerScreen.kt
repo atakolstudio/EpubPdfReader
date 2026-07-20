@@ -156,8 +156,7 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                         // sadece görsel olarak ısıtan yarı saydam bir katman.
                         if (readingMode == ReadingMode.SEPIA) {
                             Box(
-                                modifier = Modifier
-                                    .matchParentSize()
+                                modifier = matchParentSize()
                                     .background(Color(0xFFF4E9D0).copy(alpha = 0.28f))
                             )
                         }
