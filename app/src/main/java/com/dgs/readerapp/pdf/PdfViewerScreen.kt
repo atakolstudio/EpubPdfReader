@@ -6,15 +6,21 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,15 +33,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dgs.readerapp.R
+
+private const val MIN_ZOOM = 0.5f
+private const val MAX_ZOOM = 3f
+private const val ZOOM_STEP = 0.25f
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +57,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
+    var zoom by remember { mutableFloatStateOf(1f) }
 
     DisposableEffect(uri) {
         onDispose {
@@ -93,6 +106,18 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                     }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { zoom = (zoom - ZOOM_STEP).coerceAtLeast(MIN_ZOOM) }
+                    ) {
+                        Icon(Icons.Filled.ZoomOut, contentDescription = "Uzaklaştır")
+                    }
+                    IconButton(
+                        onClick = { zoom = (zoom + ZOOM_STEP).coerceAtMost(MAX_ZOOM) }
+                    ) {
+                        Icon(Icons.Filled.ZoomIn, contentDescription = "Yakınlaştır")
+                    }
                 }
             )
         }
@@ -104,16 +129,30 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
             when {
                 isLoading -> CircularProgressIndicator()
                 error -> Text(context.getString(R.string.error_loading))
-                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(pages) { bitmap ->
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .background(MaterialTheme.colorScheme.surface)
-                        )
+                else -> {
+                    val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(pages) { bitmap ->
+                            val targetWidth = screenWidthDp * zoom
+                            val aspect = bitmap.height.toFloat() / bitmap.width.toFloat()
+                            val targetHeight = targetWidth * aspect
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                                    .background(MaterialTheme.colorScheme.surface)
+                            ) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .width(targetWidth)
+                                        .height(targetHeight)
+                                        .padding(vertical = 4.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
