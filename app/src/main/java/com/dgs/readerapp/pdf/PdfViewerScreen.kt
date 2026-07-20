@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,6 +38,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -44,6 +46,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dgs.readerapp.R
+import com.dgs.readerapp.data.ReadingProgressStore
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private const val MIN_ZOOM = 0.5f
 private const val MAX_ZOOM = 3f
@@ -58,6 +63,18 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     var zoom by remember { mutableFloatStateOf(1f) }
+    val progressStore = remember { ReadingProgressStore(context) }
+    val uriKey = remember(uri) { uri.toString() }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = remember(uriKey) { progressStore.getPdfPageIndex(uriKey) }
+    )
+
+    // Kaydırma pozisyonu her değiştiğinde kaldığı sayfayı kaydet.
+    LaunchedEffect(listState, uriKey) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { index -> progressStore.savePdfPageIndex(uriKey, index) }
+    }
 
     DisposableEffect(uri) {
         onDispose {
@@ -131,7 +148,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                 error -> Text(context.getString(R.string.error_loading))
                 else -> {
                     val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
                         items(pages) { bitmap ->
                             val targetWidth = screenWidthDp * zoom
                             val aspect = bitmap.height.toFloat() / bitmap.width.toFloat()
