@@ -46,6 +46,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dgs.readerapp.R
+import com.dgs.readerapp.data.BookType
+import com.dgs.readerapp.data.LibraryStore
 import com.dgs.readerapp.data.ReadingProgressStore
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -64,6 +66,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     var zoom by remember { mutableFloatStateOf(1f) }
     val progressStore = remember { ReadingProgressStore(context) }
+    val libraryStore = remember { LibraryStore(context) }
     val uriKey = remember(uri) { uri.toString() }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = remember(uriKey) { progressStore.getPdfPageIndex(uriKey) }
@@ -73,13 +76,24 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     LaunchedEffect(listState, uriKey) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
-            .collect { index -> progressStore.savePdfPageIndex(uriKey, index) }
+            .collect { index ->
+                progressStore.savePdfPageIndex(uriKey, index)
+                if (pages.isNotEmpty()) {
+                    libraryStore.updateProgress(uriKey, index, pages.size)
+                }
+            }
     }
 
     DisposableEffect(uri) {
         onDispose {
             pfd?.close()
             pages.forEach { it.recycle() }
+        }
+    }
+
+    LaunchedEffect(pages) {
+        if (pages.isNotEmpty()) {
+            libraryStore.updateProgress(uriKey, listState.firstVisibleItemIndex, pages.size)
         }
     }
 

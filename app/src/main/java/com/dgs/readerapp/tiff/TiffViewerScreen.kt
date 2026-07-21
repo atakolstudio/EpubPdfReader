@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dgs.readerapp.R
+import com.dgs.readerapp.data.BookType
+import com.dgs.readerapp.data.LibraryStore
 import com.dgs.readerapp.data.ReadingProgressStore
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -69,6 +71,7 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(1f) }
     val progressStore = remember { ReadingProgressStore(context) }
+    val libraryStore = remember { LibraryStore(context) }
     val uriKey = remember(uri) { uri.toString() }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = remember(uriKey) { progressStore.getTiffPageIndex(uriKey) }
@@ -77,7 +80,18 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
     LaunchedEffect(listState, uriKey) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
-            .collect { index -> progressStore.saveTiffPageIndex(uriKey, index) }
+            .collect { index ->
+                progressStore.saveTiffPageIndex(uriKey, index)
+                if (pages.isNotEmpty()) {
+                    libraryStore.updateProgress(uriKey, index, pages.size)
+                }
+            }
+    }
+
+    LaunchedEffect(pages) {
+        if (pages.isNotEmpty()) {
+            libraryStore.updateProgress(uriKey, listState.firstVisibleItemIndex, pages.size)
+        }
     }
 
     LaunchedEffect(uri) {

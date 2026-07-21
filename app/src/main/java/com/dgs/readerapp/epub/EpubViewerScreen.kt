@@ -5,16 +5,21 @@ import android.net.Uri
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
@@ -24,6 +29,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -45,6 +52,8 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewFeature
 import com.dgs.readerapp.R
+import com.dgs.readerapp.data.BookType
+import com.dgs.readerapp.data.LibraryStore
 import com.dgs.readerapp.data.ReadingProgressStore
 import kotlinx.coroutines.launch
 import java.io.File
@@ -69,8 +78,10 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
     var textZoom by remember { mutableIntStateOf(100) }
     var readingMode by remember { mutableStateOf(ReadingMode.DAY) }
     var themeMenuExpanded by remember { mutableStateOf(false) }
+    var showToc by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val progressStore = remember { ReadingProgressStore(context) }
+    val libraryStore = remember { LibraryStore(context) }
     val uriKey = remember(uri) { uri.toString() }
 
     LaunchedEffect(uri) {
@@ -93,6 +104,11 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    if (!book?.toc.isNullOrEmpty()) {
+                        IconButton(onClick = { showToc = true }) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "İçindekiler")
+                        }
+                    }
                     IconButton(
                         onClick = { textZoom = (textZoom - TEXT_ZOOM_STEP).coerceAtLeast(MIN_TEXT_ZOOM) }
                     ) {
@@ -144,9 +160,11 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                         pageCount = { b.chapters.size }
                     )
 
-                    // Her bölüm değişiminde kaldığı yeri kaydet.
+                    // Her bölüm değişiminde kaldığı yeri kaydet (hem detaylı ilerleme
+                    // deposuna hem de ana ekrandaki "Kitaplığım" listesine).
                     LaunchedEffect(pagerState.currentPage) {
                         progressStore.saveEpubChapterIndex(uriKey, pagerState.currentPage)
+                        libraryStore.updateProgress(uriKey, pagerState.currentPage, b.chapters.size)
                     }
 
                     // Sağ/sol kaydırma (swipe) ile bölümler arası geçiş.
@@ -202,6 +220,28 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                             },
                             enabled = pagerState.currentPage < b.chapters.size - 1
                         ) { Text("->") }
+                    }
+
+                    if (showToc) {
+                        ModalBottomSheet(onDismissRequest = { showToc = false }) {
+                            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                                items(b.toc) { entry ->
+                                    Text(
+                                        text = entry.title,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                scope.launch {
+                                                    pagerState.animateScrollToPage(entry.chapterIndex)
+                                                }
+                                                showToc = false
+                                            }
+                                            .padding(horizontal = 20.dp, vertical = 14.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
