@@ -6,42 +6,73 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dgs.readerapp.data.BookType
-import com.dgs.readerapp.data.LibraryStore
-import com.dgs.readerapp.data.RecentBook
-import com.dgs.readerapp.data.queryDisplayName
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.dgs.readerapp.data.formatDate
+import com.dgs.readerapp.data.formatFileSize
+import com.dgs.readerapp.data.local.BookEntity
+import com.dgs.readerapp.data.local.BookType
+import com.dgs.readerapp.ui.library.LibraryViewModel
+import com.dgs.readerapp.ui.library.SortOption
+import com.dgs.readerapp.ui.library.TypeFilter
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,40 +82,34 @@ fun HomeScreen(
     onTiffPicked: (Uri) -> Unit
 ) {
     val context = LocalContext.current
-    val libraryStore = remember { LibraryStore(context) }
-    var recents by remember { mutableStateOf(libraryStore.getRecents()) }
+    val viewModel: LibraryViewModel = viewModel(factory = LibraryViewModel.factory(context))
+    val books by viewModel.books.collectAsState()
 
-    fun openAndRecord(uri: Uri, type: String, onPicked: (Uri) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var sortOption by remember { mutableStateOf(SortOption.RECENT) }
+    var typeFilter by remember { mutableStateOf(TypeFilter.ALL) }
+    var infoDialogBook by remember { mutableStateOf<BookEntity?>(null) }
+
+    fun grantPersistablePermission(uri: Uri) {
         try {
-            context.contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (e: SecurityException) {
             // Bazı sağlayıcılar kalıcı izni desteklemez; dosya bu oturumda yine de açılabilir.
         }
-        val name = queryDisplayName(context, uri)
-        libraryStore.recordOpened(uri.toString(), name, type)
-        recents = libraryStore.getRecents()
-        onPicked(uri)
     }
 
-    val pdfLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri -> uri?.let { openAndRecord(it, BookType.PDF, onPdfPicked) } }
+    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { grantPersistablePermission(it); onPdfPicked(it) }
+    }
+    val epubLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { grantPersistablePermission(it); onEpubPicked(it) }
+    }
+    val tiffLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { grantPersistablePermission(it); onTiffPicked(it) }
+    }
 
-    val epubLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri -> uri?.let { openAndRecord(it, BookType.EPUB, onEpubPicked) } }
-
-    val tiffLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri -> uri?.let { openAndRecord(it, BookType.TIFF, onTiffPicked) } }
-
-    fun reopen(book: RecentBook) {
-        val uri = Uri.parse(book.uriKey)
-        libraryStore.recordOpened(book.uriKey, book.displayName, book.type)
-        recents = libraryStore.getRecents()
+    fun reopen(book: BookEntity) {
+        val uri = Uri.parse(book.id)
         when (book.type) {
             BookType.PDF -> onPdfPicked(uri)
             BookType.EPUB -> onEpubPicked(uri)
@@ -92,120 +117,277 @@ fun HomeScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.home_title)) })
+    fun shareBook(book: BookEntity) {
+        val mime = when (book.type) {
+            BookType.PDF -> "application/pdf"
+            BookType.EPUB -> "application/epub+zip"
+            BookType.TIFF -> "image/tiff"
+            else -> "*/*"
         }
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, Uri.parse(book.id))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(intent, "Paylaş"))
+        } catch (e: Exception) {
+            // paylaşım başarısız olursa sessizce yok say
+        }
+    }
+
+    val filtered = books
+        .filter { b -> query.isBlank() || b.name.contains(query, ignoreCase = true) }
+        .filter { b ->
+            when (typeFilter) {
+                TypeFilter.ALL -> true
+                TypeFilter.PDF -> b.type == BookType.PDF
+                TypeFilter.EPUB -> b.type == BookType.EPUB
+                TypeFilter.TIFF -> b.type == BookType.TIFF
+                TypeFilter.FAVORITES -> b.favorite
+            }
+        }
+        .let { list ->
+            when (sortOption) {
+                SortOption.RECENT -> list.sortedByDescending { it.lastOpened }
+                SortOption.NAME -> list.sortedBy { it.name.lowercase() }
+                SortOption.PROGRESS -> list.sortedByDescending { it.progress }
+            }
+        }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.library_title)) }) }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-        ) {
-            Button(
-                onClick = { pdfLauncher.launch(arrayOf("application/pdf")) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.PictureAsPdf, contentDescription = null)
-                Text(text = "  " + stringResource(R.string.open_pdf), modifier = Modifier.padding(start = 4.dp))
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                OpenBookButton(
+                    label = stringResource(R.string.open_pdf),
+                    icon = Icons.Filled.PictureAsPdf,
+                    onClick = { pdfLauncher.launch(arrayOf("application/pdf")) }
+                )
+                Spacer(Modifier.height(10.dp))
+                OpenBookButton(
+                    label = stringResource(R.string.open_epub),
+                    icon = Icons.Filled.MenuBook,
+                    onClick = { epubLauncher.launch(arrayOf("application/epub+zip")) }
+                )
+                Spacer(Modifier.height(10.dp))
+                OpenBookButton(
+                    label = stringResource(R.string.open_tiff),
+                    icon = Icons.Filled.Image,
+                    onClick = { tiffLauncher.launch(arrayOf("image/tiff")) }
+                )
             }
 
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(6.dp))
-
-            Button(
-                onClick = { epubLauncher.launch(arrayOf("application/epub+zip")) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.MenuBook, contentDescription = null)
-                Text(text = "  " + stringResource(R.string.open_epub), modifier = Modifier.padding(start = 4.dp))
-            }
-
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(6.dp))
-
-            Button(
-                onClick = { tiffLauncher.launch(arrayOf("image/tiff")) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Filled.Image, contentDescription = null)
-                Text(text = "  " + stringResource(R.string.open_tiff), modifier = Modifier.padding(start = 4.dp))
-            }
-
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(12.dp))
             HorizontalDivider()
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(8.dp))
 
-            Text(
-                text = stringResource(R.string.library_title),
-                style = MaterialTheme.typography.titleLarge
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                placeholder = { Text(stringResource(R.string.search_hint)) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                singleLine = true
             )
 
-            androidx.compose.foundation.layout.Spacer(modifier = Modifier.padding(6.dp))
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(TypeFilter.entries) { filter ->
+                    FilterChip(
+                        selected = typeFilter == filter,
+                        onClick = { typeFilter = filter },
+                        label = { Text(filter.label) }
+                    )
+                }
+            }
 
-            if (recents.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.library_empty),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SortOption.entries.forEach { option ->
+                    FilterChip(
+                        selected = sortOption == option,
+                        onClick = { sortOption = option },
+                        label = { Text(option.label) }
+                    )
+                }
+            }
+
+            if (filtered.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = if (books.isEmpty()) stringResource(R.string.library_empty) else "Sonuç bulunamadı.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(32.dp)
+                    )
+                }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(recents, key = { it.uriKey }) { book ->
-                        RecentBookRow(
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
+                ) {
+                    items(filtered, key = { it.id }) { book ->
+                        BookCard(
                             book = book,
                             onClick = { reopen(book) },
-                            onDelete = {
-                                libraryStore.remove(book.uriKey)
-                                recents = libraryStore.getRecents()
-                            }
+                            onFavoriteClick = { viewModel.toggleFavorite(book) },
+                            onDelete = { viewModel.delete(book) },
+                            onShare = { shareBook(book) },
+                            onInfo = { infoDialogBook = book }
                         )
-                        HorizontalDivider()
                     }
                 }
             }
         }
     }
+
+    infoDialogBook?.let { book ->
+        AlertDialog(
+            onDismissRequest = { infoDialogBook = null },
+            confirmButton = {
+                Button(onClick = { infoDialogBook = null }) { Text("Kapat") }
+            },
+            title = { Text(book.name) },
+            text = {
+                Column {
+                    Text("Tür: ${book.type.uppercase()}")
+                    Text("Boyut: ${formatFileSize(book.fileSizeBytes)}")
+                    if (book.totalPages > 0) {
+                        Text("İlerleme: ${book.lastPage + 1} / ${book.totalPages}")
+                    }
+                    Text("Eklendi: ${formatDate(book.addedAt)}")
+                    Text("Son açılma: ${formatDate(book.lastOpened)}")
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun RecentBookRow(book: RecentBook, onClick: () -> Unit, onDelete: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+private fun OpenBookButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().height(56.dp),
+        shape = RoundedCornerShape(50)
     ) {
-        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = when (book.type) {
-                    BookType.PDF -> Icons.Filled.PictureAsPdf
-                    BookType.TIFF -> Icons.Filled.Image
-                    else -> Icons.Filled.MenuBook
-                },
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Column(modifier = Modifier.padding(start = 12.dp)) {
+        Icon(icon, contentDescription = null)
+        Text(text = "  $label", modifier = Modifier.padding(start = 4.dp))
+    }
+}
+
+@Composable
+private fun BookCard(
+    book: BookEntity,
+    onClick: () -> Unit,
+    onFavoriteClick: () -> Unit,
+    onDelete: () -> Unit,
+    onShare: () -> Unit,
+    onInfo: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+    ) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(width = 56.dp, height = 80.dp)
+                    .clip(RoundedCornerShape(10.dp))
+            ) {
+                if (book.coverPath != null) {
+                    AsyncImage(
+                        model = File(book.coverPath),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = when (book.type) {
+                                BookType.PDF -> Icons.Filled.PictureAsPdf
+                                BookType.TIFF -> Icons.Filled.Image
+                                else -> Icons.Filled.MenuBook
+                            },
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(
-                    text = book.displayName,
+                    text = book.name,
                     style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (book.total > 0) {
-                    val unit = if (book.type == BookType.EPUB) "Bölüm" else "Sayfa"
+                if (book.totalPages > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { book.progress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "$unit ${book.position + 1} / ${book.total}",
+                        text = "${book.lastPage + 1} / ${book.totalPages}",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Text(
+                    text = "${formatFileSize(book.fileSizeBytes)} • ${formatDate(book.lastOpened)}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Filled.Close, contentDescription = "Kaldır")
+
+            IconButton(onClick = onFavoriteClick) {
+                Icon(
+                    imageVector = if (book.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = "Favori",
+                    tint = if (book.favorite) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Menü")
+                }
+                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Paylaş") },
+                        leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
+                        onClick = { menuExpanded = false; onShare() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Bilgi") },
+                        leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
+                        onClick = { menuExpanded = false; onInfo() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Sil") },
+                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                        onClick = { menuExpanded = false; onDelete() }
+                    )
+                }
+            }
         }
     }
 }

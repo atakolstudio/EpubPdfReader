@@ -52,9 +52,9 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewFeature
 import com.dgs.readerapp.R
-import com.dgs.readerapp.data.BookType
-import com.dgs.readerapp.data.LibraryStore
 import com.dgs.readerapp.data.ReadingProgressStore
+import com.dgs.readerapp.data.local.BookType
+import com.dgs.readerapp.data.repository.LibraryRepository
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -81,12 +81,14 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
     var showToc by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val progressStore = remember { ReadingProgressStore(context) }
-    val libraryStore = remember { LibraryStore(context) }
+    val libraryRepository = remember { LibraryRepository.create(context) }
     val uriKey = remember(uri) { uri.toString() }
 
     LaunchedEffect(uri) {
         try {
-            book = EpubParser(context).parse(uri)
+            val parsed = EpubParser(context).parse(uri)
+            book = parsed
+            libraryRepository.recordOpened(context, uri, BookType.EPUB, parsed.coverFile)
         } catch (e: Exception) {
             error = true
         } finally {
@@ -164,7 +166,7 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                     // deposuna hem de ana ekrandaki "Kitaplığım" listesine).
                     LaunchedEffect(pagerState.currentPage) {
                         progressStore.saveEpubChapterIndex(uriKey, pagerState.currentPage)
-                        libraryStore.updateProgress(uriKey, pagerState.currentPage, b.chapters.size)
+                        libraryRepository.updateProgress(uriKey, pagerState.currentPage, b.chapters.size)
                     }
 
                     // Sağ/sol kaydırma (swipe) ile bölümler arası geçiş.

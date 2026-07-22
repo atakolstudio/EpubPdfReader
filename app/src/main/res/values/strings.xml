@@ -3,8 +3,9 @@
     <string name="open_pdf">PDF Aç</string>
     <string name="open_epub">EPUB Aç</string>
     <string name="open_tiff">TIFF Aç</string>
-    <string name="library_title">Kitaplığım</string>
+    <string name="library_title">Kütüphanem</string>
     <string name="library_empty">Henüz kitap açmadın. Yukarıdaki butonlardan bir PDF, EPUB veya TIFF seç.</string>
+    <string name="search_hint">Kitaplarda ara…</string>
     <string name="home_title">Kitaplığım</string>
     <string name="loading">Yükleniyor…</string>
     <string name="error_loading">Dosya açılamadı</string>

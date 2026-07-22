@@ -21,7 +21,8 @@ data class EpubBook(
     val title: String,
     val chapters: List<File>,
     val extractDir: File,
-    val toc: List<TocEntry> = emptyList()
+    val toc: List<TocEntry> = emptyList(),
+    val coverFile: File? = null
 )
 
 private data class ManifestItem(val href: String, val properties: String?)
@@ -69,11 +70,17 @@ class EpubParser(private val context: Context) {
             emptyList()
         }
 
+        val coverHref = opfResult.manifest.values.firstOrNull {
+            it.properties?.contains("cover-image") == true
+        }?.href ?: opfResult.metaCoverId?.let { opfResult.manifest[it]?.href }
+        val coverFile = coverHref?.let { File(opfDir, it) }?.takeIf { it.exists() }
+
         return EpubBook(
             title = opfResult.title.ifBlank { "Kitap" },
             chapters = finalChapters,
             extractDir = extractDir,
-            toc = toc
+            toc = toc,
+            coverFile = coverFile
         )
     }
 
@@ -137,17 +144,19 @@ class EpubParser(private val context: Context) {
         val title: String,
         val spineHrefs: List<String>,
         val manifest: Map<String, ManifestItem>,
-        val tocId: String?
+        val tocId: String?,
+        val metaCoverId: String?
     )
 
     /** OPF içinden başlık, manifest (id->href/properties), spine sırası ve toc referansını çıkarır. */
     private fun parseOpf(opfFile: File): OpfResult {
-        if (!opfFile.exists()) return OpfResult("", emptyList(), emptyMap(), null)
+        if (!opfFile.exists()) return OpfResult("", emptyList(), emptyMap(), null, null)
 
         val manifest = mutableMapOf<String, ManifestItem>()
         val spineIds = mutableListOf<String>()
         var title = ""
         var tocId: String? = null
+        var metaCoverId: String? = null
 
         val parser = xmlParserFor(opfFile)
         var eventType = parser.eventType
@@ -170,6 +179,11 @@ class EpubParser(private val context: Context) {
                         "spine" -> {
                             tocId = parser.getAttributeValue(null, "toc")
                         }
+                        "meta" -> {
+                            if (parser.getAttributeValue(null, "name") == "cover") {
+                                metaCoverId = parser.getAttributeValue(null, "content")
+                            }
+                        }
                         "title" -> inTitle = true
                     }
                 }
@@ -184,7 +198,7 @@ class EpubParser(private val context: Context) {
         }
 
         val hrefs = spineIds.mapNotNull { manifest[it]?.href }
-        return OpfResult(title, hrefs, manifest, tocId)
+        return OpfResult(title, hrefs, manifest, tocId, metaCoverId)
     }
 
     /** EPUB3 nav.xhtml içindeki <a href="...">Başlık</a> ögelerini (iç içe etiketler dahil) çıkarır. */

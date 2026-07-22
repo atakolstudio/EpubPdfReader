@@ -46,9 +46,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dgs.readerapp.R
-import com.dgs.readerapp.data.BookType
-import com.dgs.readerapp.data.LibraryStore
 import com.dgs.readerapp.data.ReadingProgressStore
+import com.dgs.readerapp.data.local.BookType
+import com.dgs.readerapp.data.repository.LibraryRepository
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -66,7 +66,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     var zoom by remember { mutableFloatStateOf(1f) }
     val progressStore = remember { ReadingProgressStore(context) }
-    val libraryStore = remember { LibraryStore(context) }
+    val libraryRepository = remember { LibraryRepository.create(context) }
     val uriKey = remember(uri) { uri.toString() }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = remember(uriKey) { progressStore.getPdfPageIndex(uriKey) }
@@ -79,7 +79,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
             .collect { index ->
                 progressStore.savePdfPageIndex(uriKey, index)
                 if (pages.isNotEmpty()) {
-                    libraryStore.updateProgress(uriKey, index, pages.size)
+                    libraryRepository.updateProgress(uriKey, index, pages.size)
                 }
             }
     }
@@ -93,7 +93,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
 
     LaunchedEffect(pages) {
         if (pages.isNotEmpty()) {
-            libraryStore.updateProgress(uriKey, listState.firstVisibleItemIndex, pages.size)
+            libraryRepository.updateProgress(uriKey, listState.firstVisibleItemIndex, pages.size)
         }
     }
 
@@ -119,6 +119,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                 }
                 renderer.close()
                 pages = bitmaps
+                libraryRepository.recordOpened(context, uri, BookType.PDF)
             } else {
                 error = true
             }

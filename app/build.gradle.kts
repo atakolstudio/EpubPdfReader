@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -73,6 +74,17 @@ dependencies {
     // WebView compose helper for EPUB rendering
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("io.github.beyka:Android-TiffBitmapFactory:0.9.9.1")
+
+    // Room
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+
+    // MVVM: ViewModel + StateFlow entegrasyonu
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+
+    // Kapak resimleri için verimli, önbellekli görsel yükleme (bellek sızıntısız)
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

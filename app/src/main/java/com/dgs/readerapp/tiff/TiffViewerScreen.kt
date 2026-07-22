@@ -43,8 +43,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dgs.readerapp.R
-import com.dgs.readerapp.data.BookType
-import com.dgs.readerapp.data.LibraryStore
+import com.dgs.readerapp.data.local.BookType
+import com.dgs.readerapp.data.repository.LibraryRepository
 import com.dgs.readerapp.data.ReadingProgressStore
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -71,7 +71,7 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(1f) }
     val progressStore = remember { ReadingProgressStore(context) }
-    val libraryStore = remember { LibraryStore(context) }
+    val libraryRepository = remember { LibraryRepository.create(context) }
     val uriKey = remember(uri) { uri.toString() }
     val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = remember(uriKey) { progressStore.getTiffPageIndex(uriKey) }
@@ -83,14 +83,14 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
             .collect { index ->
                 progressStore.saveTiffPageIndex(uriKey, index)
                 if (pages.isNotEmpty()) {
-                    libraryStore.updateProgress(uriKey, index, pages.size)
+                    libraryRepository.updateProgress(uriKey, index, pages.size)
                 }
             }
     }
 
     LaunchedEffect(pages) {
         if (pages.isNotEmpty()) {
-            libraryStore.updateProgress(uriKey, listState.firstVisibleItemIndex, pages.size)
+            libraryRepository.updateProgress(uriKey, listState.firstVisibleItemIndex, pages.size)
         }
     }
 
@@ -117,6 +117,7 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
                 error = true
             } else {
                 pages = bitmaps
+                libraryRepository.recordOpened(context, uri, BookType.TIFF)
             }
         } catch (e: Exception) {
             error = true
