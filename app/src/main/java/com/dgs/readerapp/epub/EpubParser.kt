@@ -55,6 +55,11 @@ class EpubParser(private val context: Context) {
         }
         tempZip.delete()
 
+        // Her bölüme, çalışma zamanında değiştirilebilen bir CSS dosyasına
+        // (__reader_overrides.css) referans ekler; böylece yazı tipi/satır
+        // aralığı ayarları JavaScript'e gerek kalmadan uygulanabilir.
+        injectOverrideStylesheetLinks(extractDir)
+
         val containerFile = File(extractDir, "META-INF/container.xml")
         val opfPath = parseContainer(containerFile) ?: findFirstOpf(extractDir)
         val opfFile = File(extractDir, opfPath)
@@ -121,6 +126,30 @@ class EpubParser(private val context: Context) {
 
     private fun safeCanonicalPath(file: File): String =
         try { file.canonicalPath } catch (e: Exception) { file.path }
+
+    private fun injectOverrideStylesheetLinks(extractDir: File) {
+        val linkTag = "<link rel=\"stylesheet\" type=\"text/css\" " +
+            "href=\"https://appassets.androidplatform.net/epub/__reader_overrides.css\">"
+        extractDir.walkTopDown()
+            .filter { it.isFile && (it.extension == "xhtml" || it.extension == "html" || it.extension == "htm") }
+            .forEach { chapterFile ->
+                try {
+                    val content = chapterFile.readText()
+                    if (!content.contains("__reader_overrides.css")) {
+                        val updated = when {
+                            content.contains("</head>", ignoreCase = true) ->
+                                content.replaceFirst(Regex("(?i)</head>"), "$linkTag</head>")
+                            content.contains("<body", ignoreCase = true) ->
+                                content.replaceFirst(Regex("(?i)<body"), "$linkTag<body")
+                            else -> linkTag + content
+                        }
+                        chapterFile.writeText(updated)
+                    }
+                } catch (e: Exception) {
+                    // Bu bölüm atlanır; okuma teması/yazı boyutu yine de diğer bölümlerde çalışır.
+                }
+            }
+    }
 
     private fun parseContainer(file: File): String? {
         if (!file.exists()) return null

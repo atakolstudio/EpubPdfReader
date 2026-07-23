@@ -6,6 +6,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,13 +21,13 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.TextDecrease
-import androidx.compose.material.icons.filled.TextIncrease
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,8 +37,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -52,15 +56,19 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewFeature
 import com.dgs.readerapp.R
-import com.dgs.readerapp.data.ReadingProgressStore
 import com.dgs.readerapp.data.local.BookType
 import com.dgs.readerapp.data.repository.LibraryRepository
+import com.dgs.readerapp.data.ReadingProgressStore
 import kotlinx.coroutines.launch
 import java.io.File
 
 private const val MIN_TEXT_ZOOM = 70
 private const val MAX_TEXT_ZOOM = 220
 private const val TEXT_ZOOM_STEP = 15
+private const val MIN_LINE_HEIGHT = 1.2f
+private const val MAX_LINE_HEIGHT = 2.4f
+private const val LINE_HEIGHT_STEP = 0.2f
+private const val MAX_READING_GAP_MS = 30 * 60 * 1000L // 30 dk üstü boşluklar (arka plana atma vb.) sayılmaz
 
 enum class ReadingMode(val label: String) {
     DAY("Gündüz"),
@@ -77,8 +85,12 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var textZoom by remember { mutableIntStateOf(100) }
     var readingMode by remember { mutableStateOf(ReadingMode.DAY) }
-    var themeMenuExpanded by remember { mutableStateOf(false) }
+    var fontFamily by remember { mutableStateOf(EpubFontFamily.DEFAULT) }
+    var lineHeight by remember { mutableFloatStateOf(1.5f) }
+    var styleVersion by remember { mutableIntStateOf(0) }
     var showToc by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
+    var showBookmarks by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val progressStore = remember { ReadingProgressStore(context) }
     val libraryRepository = remember { LibraryRepository.create(context) }
@@ -111,34 +123,11 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                             Icon(Icons.AutoMirrored.Filled.List, contentDescription = "İçindekiler")
                         }
                     }
-                    IconButton(
-                        onClick = { textZoom = (textZoom - TEXT_ZOOM_STEP).coerceAtLeast(MIN_TEXT_ZOOM) }
-                    ) {
-                        Icon(Icons.Filled.TextDecrease, contentDescription = "Yazıyı küçült")
+                    IconButton(onClick = { showBookmarks = true }) {
+                        Icon(Icons.Filled.Bookmarks, contentDescription = "Yer imlerim")
                     }
-                    IconButton(
-                        onClick = { textZoom = (textZoom + TEXT_ZOOM_STEP).coerceAtMost(MAX_TEXT_ZOOM) }
-                    ) {
-                        Icon(Icons.Filled.TextIncrease, contentDescription = "Yazıyı büyüt")
-                    }
-                    Box {
-                        IconButton(onClick = { themeMenuExpanded = true }) {
-                            Icon(Icons.Filled.Palette, contentDescription = "Okuma teması")
-                        }
-                        DropdownMenu(
-                            expanded = themeMenuExpanded,
-                            onDismissRequest = { themeMenuExpanded = false }
-                        ) {
-                            ReadingMode.entries.forEach { mode ->
-                                DropdownMenuItem(
-                                    text = { Text(mode.label) },
-                                    onClick = {
-                                        readingMode = mode
-                                        themeMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Okuma ayarları")
                     }
                 }
             )
@@ -161,12 +150,21 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                         initialPage = savedChapter,
                         pageCount = { b.chapters.size }
                     )
+                    var isCurrentBookmarked by remember { mutableStateOf(false) }
+                    var lastTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
-                    // Her bölüm değişiminde kaldığı yeri kaydet (hem detaylı ilerleme
-                    // deposuna hem de ana ekrandaki "Kitaplığım" listesine).
+                    // Her bölüm değişiminde: kaldığı yeri kaydet, okuma süresini biriktir,
+                    // yer imi durumunu güncelle.
                     LaunchedEffect(pagerState.currentPage) {
+                        val now = System.currentTimeMillis()
+                        val delta = now - lastTimestamp
+                        lastTimestamp = now
+                        if (delta in 500..MAX_READING_GAP_MS) {
+                            libraryRepository.addReadingTime(uriKey, delta)
+                        }
                         progressStore.saveEpubChapterIndex(uriKey, pagerState.currentPage)
                         libraryRepository.updateProgress(uriKey, pagerState.currentPage, b.chapters.size)
+                        isCurrentBookmarked = libraryRepository.isBookmarked(uriKey, pagerState.currentPage)
                     }
 
                     // Sağ/sol kaydırma (swipe) ile bölümler arası geçiş.
@@ -181,7 +179,8 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                                 chapterFile = b.chapters[page],
                                 extractDir = b.extractDir,
                                 textZoom = textZoom,
-                                readingMode = readingMode
+                                readingMode = readingMode,
+                                styleVersion = styleVersion
                             )
                         }
 
@@ -197,8 +196,9 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                     }
 
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
                             onClick = {
@@ -208,10 +208,25 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                             },
                             enabled = pagerState.currentPage > 0
                         ) { Text("<-") }
-                        Text(
-                            text = "${pagerState.currentPage + 1} / ${b.chapters.size}",
-                            modifier = Modifier.align(Alignment.CenterVertically)
-                        )
+
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    val label = "Bölüm ${pagerState.currentPage + 1}"
+                                    libraryRepository.toggleBookmark(uriKey, pagerState.currentPage, label)
+                                    isCurrentBookmarked = !isCurrentBookmarked
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isCurrentBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                contentDescription = "Yer imi ekle/kaldır",
+                                tint = if (isCurrentBookmarked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Text("${pagerState.currentPage + 1} / ${b.chapters.size}")
+
                         IconButton(
                             onClick = {
                                 scope.launch {
@@ -234,13 +249,103 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
-                                                scope.launch {
-                                                    pagerState.animateScrollToPage(entry.chapterIndex)
-                                                }
+                                                scope.launch { pagerState.animateScrollToPage(entry.chapterIndex) }
                                                 showToc = false
                                             }
                                             .padding(horizontal = 20.dp, vertical = 14.dp)
                                     )
+                                }
+                            }
+                        }
+                    }
+
+                    if (showBookmarks) {
+                        val bookmarks by libraryRepository.observeBookmarks(uriKey).collectAsState(initial = emptyList())
+                        ModalBottomSheet(onDismissRequest = { showBookmarks = false }) {
+                            if (bookmarks.isEmpty()) {
+                                Text(
+                                    "Henüz yer imi yok. Alt çubuktaki yer imi ikonuna dokunarak ekleyebilirsin.",
+                                    modifier = Modifier.padding(24.dp)
+                                )
+                            } else {
+                                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                                    items(bookmarks, key = { it.id }) { bm ->
+                                        Text(
+                                            text = bm.label,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    scope.launch { pagerState.animateScrollToPage(bm.position) }
+                                                    showBookmarks = false
+                                                }
+                                                .padding(horizontal = 20.dp, vertical = 14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (showSettings) {
+                        ModalBottomSheet(onDismissRequest = { showSettings = false }) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text("Okuma Teması", style = MaterialTheme.typography.titleLarge)
+                                Row(
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    ReadingMode.entries.forEach { mode ->
+                                        FilterChip(
+                                            selected = readingMode == mode,
+                                            onClick = { readingMode = mode },
+                                            label = { Text(mode.label) }
+                                        )
+                                    }
+                                }
+
+                                Text("Yazı Boyutu", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 20.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                                    IconButton(onClick = { textZoom = (textZoom - TEXT_ZOOM_STEP).coerceAtLeast(MIN_TEXT_ZOOM) }) {
+                                        Text("A-")
+                                    }
+                                    Text("%$textZoom", modifier = Modifier.padding(horizontal = 12.dp))
+                                    IconButton(onClick = { textZoom = (textZoom + TEXT_ZOOM_STEP).coerceAtMost(MAX_TEXT_ZOOM) }) {
+                                        Text("A+")
+                                    }
+                                }
+
+                                Text("Yazı Tipi", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 20.dp))
+                                Row(
+                                    modifier = Modifier.padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    EpubFontFamily.entries.forEach { family ->
+                                        FilterChip(
+                                            selected = fontFamily == family,
+                                            onClick = {
+                                                fontFamily = family
+                                                writeReaderOverridesCss(b.extractDir, fontFamily, lineHeight)
+                                                styleVersion++
+                                            },
+                                            label = { Text(family.label) }
+                                        )
+                                    }
+                                }
+
+                                Text("Satır Aralığı", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 20.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                                    IconButton(onClick = {
+                                        lineHeight = (lineHeight - LINE_HEIGHT_STEP).coerceAtLeast(MIN_LINE_HEIGHT)
+                                        writeReaderOverridesCss(b.extractDir, fontFamily, lineHeight)
+                                        styleVersion++
+                                    }) { Text("-") }
+                                    Text("${"%.1f".format(lineHeight)}x", modifier = Modifier.padding(horizontal = 12.dp))
+                                    IconButton(onClick = {
+                                        lineHeight = (lineHeight + LINE_HEIGHT_STEP).coerceAtMost(MAX_LINE_HEIGHT)
+                                        writeReaderOverridesCss(b.extractDir, fontFamily, lineHeight)
+                                        styleVersion++
+                                    }) { Text("+") }
                                 }
                             }
                         }
@@ -257,7 +362,8 @@ private fun EpubWebView(
     chapterFile: File,
     extractDir: File,
     textZoom: Int,
-    readingMode: ReadingMode
+    readingMode: ReadingMode,
+    styleVersion: Int
 ) {
     AndroidView(factory = { ctx ->
         WebView(ctx).apply {
@@ -294,11 +400,12 @@ private fun EpubWebView(
 
         val relativePath = chapterFile.relativeTo(extractDir).path.replace(File.separatorChar, '/')
         val url = "https://appassets.androidplatform.net/epub/$relativePath"
-        // Sadece bölüm gerçekten değiştiyse yeniden yükle; aksi halde
-        // her recomposition'da (ör. yazı boyutu/tema değişince) sayfa baştan
-        // yüklenip kaydırma konumu kaybolmasın.
-        if (webView.tag != url) {
-            webView.tag = url
+        // Tag hem URL'yi hem de stil sürümünü içerir: bölüm değiştiğinde YA DA
+        // yazı tipi/satır aralığı ayarı değiştiğinde (styleVersion artınca) yeniden
+        // yüklenir; sadece yazı boyutu/tema değişince gereksiz yeniden yükleme olmaz.
+        val tag = "$url|$styleVersion"
+        if (webView.tag != tag) {
+            webView.tag = tag
             webView.loadUrl(url)
         }
     })

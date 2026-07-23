@@ -15,10 +15,12 @@ import androidx.compose.ui.Modifier
 import com.dgs.readerapp.epub.EpubViewerScreen
 import com.dgs.readerapp.pdf.PdfViewerScreen
 import com.dgs.readerapp.tiff.TiffViewerScreen
+import com.dgs.readerapp.ui.stats.StatsScreen
 import com.dgs.readerapp.ui.theme.EpubPdfReaderTheme
 
 private sealed class Screen {
     data object Home : Screen()
+    data object Stats : Screen()
     data class Pdf(val uri: Uri) : Screen()
     data class Epub(val uri: Uri) : Screen()
     data class Tiff(val uri: Uri) : Screen()
@@ -52,8 +54,10 @@ class MainActivity : ComponentActivity() {
                         is Screen.Home -> HomeScreen(
                             onPdfPicked = { uri -> screen = Screen.Pdf(uri) },
                             onEpubPicked = { uri -> screen = Screen.Epub(uri) },
-                            onTiffPicked = { uri -> screen = Screen.Tiff(uri) }
+                            onTiffPicked = { uri -> screen = Screen.Tiff(uri) },
+                            onOpenStats = { screen = Screen.Stats }
                         )
+                        is Screen.Stats -> StatsScreen(onBack = { screen = Screen.Home })
                         is Screen.Pdf -> PdfViewerScreen(
                             uri = current.uri,
                             onBack = { screen = Screen.Home }

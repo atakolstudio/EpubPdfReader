@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -70,6 +71,7 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
     var zoom by remember { mutableFloatStateOf(1f) }
+    var lastTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val progressStore = remember { ReadingProgressStore(context) }
     val libraryRepository = remember { LibraryRepository.create(context) }
     val uriKey = remember(uri) { uri.toString() }
@@ -81,6 +83,12 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .collect { index ->
+                val now = System.currentTimeMillis()
+                val delta = now - lastTimestamp
+                lastTimestamp = now
+                if (delta in 500..(30 * 60 * 1000L)) {
+                    libraryRepository.addReadingTime(uriKey, delta)
+                }
                 progressStore.saveTiffPageIndex(uriKey, index)
                 if (pages.isNotEmpty()) {
                     libraryRepository.updateProgress(uriKey, index, pages.size)

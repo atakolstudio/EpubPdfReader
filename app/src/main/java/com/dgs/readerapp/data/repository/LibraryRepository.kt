@@ -8,6 +8,8 @@ import com.dgs.readerapp.data.local.AppDatabase
 import com.dgs.readerapp.data.local.BookDao
 import com.dgs.readerapp.data.local.BookEntity
 import com.dgs.readerapp.data.local.BookType
+import com.dgs.readerapp.data.local.BookmarkDao
+import com.dgs.readerapp.data.local.BookmarkEntity
 import com.dgs.readerapp.data.queryDisplayName
 import kotlinx.coroutines.flow.Flow
 import java.io.File
@@ -17,7 +19,10 @@ import java.io.File
  * Room DAO'yu sarmalar; kapak üretimi ve dosya meta verisi okuma gibi
  * I/O işlerini ViewModel'den soyutlar.
  */
-class LibraryRepository(private val dao: BookDao) {
+class LibraryRepository(
+    private val dao: BookDao,
+    private val bookmarkDao: BookmarkDao
+) {
 
     fun observeBooks(): Flow<List<BookEntity>> = dao.observeAll()
 
@@ -60,6 +65,32 @@ class LibraryRepository(private val dao: BookDao) {
 
     suspend fun delete(id: String) = dao.deleteById(id)
 
+    suspend fun addReadingTime(id: String, deltaMillis: Long) {
+        if (deltaMillis > 0) dao.addReadingTime(id, deltaMillis)
+    }
+
+    fun observeBookmarks(bookId: String): Flow<List<BookmarkEntity>> = bookmarkDao.observeForBook(bookId)
+
+    suspend fun toggleBookmark(bookId: String, position: Int, label: String) {
+        val existing = bookmarkDao.findAt(bookId, position)
+        if (existing != null) {
+            bookmarkDao.deleteAt(bookId, position)
+        } else {
+            bookmarkDao.insert(BookmarkEntity(bookId = bookId, position = position, label = label))
+        }
+    }
+
+    suspend fun isBookmarked(bookId: String, position: Int): Boolean =
+        bookmarkDao.findAt(bookId, position) != null
+
+    suspend fun removeBookmark(id: Long) = bookmarkDao.deleteById(id)
+
+    suspend fun exportAll(): List<BookEntity> = dao.getAllOnce()
+
+    suspend fun importAll(books: List<BookEntity>) {
+        books.forEach { dao.upsert(it) }
+    }
+
     private fun generateCover(
         context: Context,
         uri: Uri,
@@ -87,7 +118,9 @@ class LibraryRepository(private val dao: BookDao) {
     }
 
     companion object {
-        fun create(context: Context): LibraryRepository =
-            LibraryRepository(AppDatabase.getInstance(context).bookDao())
+        fun create(context: Context): LibraryRepository {
+            val db = AppDatabase.getInstance(context)
+            return LibraryRepository(db.bookDao(), db.bookmarkDao())
+        }
     }
 }

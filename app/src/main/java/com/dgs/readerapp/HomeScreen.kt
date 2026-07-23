@@ -22,6 +22,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -54,6 +57,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.dgs.readerapp.data.LibraryBackup
 import com.dgs.readerapp.data.formatDate
 import com.dgs.readerapp.data.formatFileSize
 import com.dgs.readerapp.data.local.BookEntity
@@ -72,6 +77,7 @@ import com.dgs.readerapp.data.local.BookType
 import com.dgs.readerapp.ui.library.LibraryViewModel
 import com.dgs.readerapp.ui.library.SortOption
 import com.dgs.readerapp.ui.library.TypeFilter
+import kotlinx.coroutines.launch
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,11 +85,14 @@ import java.io.File
 fun HomeScreen(
     onPdfPicked: (Uri) -> Unit,
     onEpubPicked: (Uri) -> Unit,
-    onTiffPicked: (Uri) -> Unit
+    onTiffPicked: (Uri) -> Unit,
+    onOpenStats: () -> Unit
 ) {
     val context = LocalContext.current
     val viewModel: LibraryViewModel = viewModel(factory = LibraryViewModel.factory(context))
     val books by viewModel.books.collectAsState()
+    val scope = rememberCoroutineScope()
+    var menuExpanded by remember { mutableStateOf(false) }
 
     var query by remember { mutableStateOf("") }
     var sortOption by remember { mutableStateOf(SortOption.RECENT) }
@@ -106,6 +115,40 @@ fun HomeScreen(
     }
     val tiffLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { grantPersistablePermission(it); onTiffPicked(it) }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        uri?.let { target ->
+            scope.launch {
+                try {
+                    val json = LibraryBackup.toJson(books)
+                    context.contentResolver.openOutputStream(target)?.use { out ->
+                        out.write(json.toByteArray())
+                    }
+                } catch (e: Exception) {
+                    // yedekleme başarısız olursa sessizce yok say
+                }
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { source ->
+            scope.launch {
+                try {
+                    val text = context.contentResolver.openInputStream(source)?.bufferedReader()?.readText()
+                    if (text != null) {
+                        viewModel.restoreBackup(LibraryBackup.fromJson(text))
+                    }
+                } catch (e: Exception) {
+                    // içe aktarma başarısız olursa sessizce yok say
+                }
+            }
+        }
     }
 
     fun reopen(book: BookEntity) {
@@ -156,7 +199,39 @@ fun HomeScreen(
         }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.library_title)) }) }
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.library_title)) },
+                actions = {
+                    IconButton(onClick = onOpenStats) {
+                        Icon(Icons.Filled.BarChart, contentDescription = "İstatistikler")
+                    }
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Menü")
+                        }
+                        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Yedekle (Dışa Aktar)") },
+                                leadingIcon = { Icon(Icons.Filled.CloudUpload, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    exportLauncher.launch("kutuphane_yedek.json")
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Geri Yükle (İçe Aktar)") },
+                                leadingIcon = { Icon(Icons.Filled.CloudDownload, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    importLauncher.launch(arrayOf("application/json"))
+                                }
+                            )
+                        }
+                    }
+                }
+            )
+        }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {

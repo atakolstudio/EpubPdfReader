@@ -18,3 +18,14 @@ fun formatDate(millis: Long): String {
     if (millis <= 0) return "-"
     return SimpleDateFormat("dd.MM.yyyy HH:mm", Locale("tr")).format(Date(millis))
 }
+
+fun formatDuration(millis: Long): String {
+    if (millis <= 0) return "0 dk"
+    val totalMinutes = millis / 60000
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours > 0 -> "${hours} sa ${minutes} dk"
+        else -> "${minutes} dk"
+    }
+}

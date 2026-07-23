@@ -39,6 +39,10 @@ class LibraryViewModel(private val repository: LibraryRepository) : ViewModel() 
         viewModelScope.launch { repository.delete(book.id) }
     }
 
+    fun restoreBackup(books: List<BookEntity>) {
+        viewModelScope.launch { repository.importAll(books) }
+    }
+
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

@@ -11,6 +11,9 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY lastOpened DESC")
     fun observeAll(): Flow<List<BookEntity>>
 
+    @Query("SELECT * FROM books")
+    suspend fun getAllOnce(): List<BookEntity>
+
     @Query("SELECT * FROM books WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): BookEntity?
 
