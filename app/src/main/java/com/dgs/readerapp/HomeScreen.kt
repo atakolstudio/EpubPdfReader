@@ -121,7 +121,7 @@ fun HomeScreen(
         contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         uri?.let { target ->
-            scope.launch {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val json = LibraryBackup.toJson(books)
                     context.contentResolver.openOutputStream(target)?.use { out ->
@@ -138,7 +138,7 @@ fun HomeScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let { source ->
-            scope.launch {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
                     val text = context.contentResolver.openInputStream(source)?.bufferedReader()?.readText()
                     if (text != null) {

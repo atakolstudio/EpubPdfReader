@@ -11,7 +11,9 @@ import com.dgs.readerapp.data.local.BookType
 import com.dgs.readerapp.data.local.BookmarkDao
 import com.dgs.readerapp.data.local.BookmarkEntity
 import com.dgs.readerapp.data.queryDisplayName
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -32,7 +34,7 @@ class LibraryRepository(
         uri: Uri,
         type: String,
         epubCoverFile: File? = null
-    ) {
+    ) = withContext(Dispatchers.IO) {
         val uriKey = uri.toString()
         val existing = dao.getById(uriKey)
         val name = queryDisplayName(context, uri)

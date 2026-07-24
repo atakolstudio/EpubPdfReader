@@ -16,9 +16,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -47,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,46 +66,56 @@ import com.dgs.readerapp.R
 import com.dgs.readerapp.data.ReadingProgressStore
 import com.dgs.readerapp.data.local.BookType
 import com.dgs.readerapp.data.repository.LibraryRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 private const val MIN_ZOOM = 0.5f
 private const val MAX_ZOOM = 3f
 private const val ZOOM_STEP = 0.25f
 private const val MAX_READING_GAP_MS = 30 * 60 * 1000L
+private const val RENDER_BUFFER_PAGES = 2 // görünür aralığın öncesi/sonrası kaç sayfa önceden render edilsin
 
 /** Android 15 (API 35) öncesinde PdfRenderer metin arama desteklemez (yalnızca raster render). */
 val PDF_SEARCH_SUPPORTED = Build.VERSION.SDK_INT >= 35
 
-private fun searchPdfPages(context: android.content.Context, uri: Uri, query: String): List<Int> {
-    if (query.isBlank() || !PDF_SEARCH_SUPPORTED) return emptyList()
-    val matches = mutableListOf<Int>()
-    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-        val renderer = PdfRenderer(pfd)
-        for (i in 0 until renderer.pageCount) {
-            renderer.openPage(i).use { page ->
-                try {
-                    val results = page.searchText(query)
-                    if (results.isNotEmpty()) matches.add(i)
-                } catch (e: Exception) {
-                    // bu cihaz/sürücü aramayı desteklemiyor olabilir; sayfa atlanır
+private data class PdfPageInfo(val width: Int, val height: Int)
+
+private suspend fun searchPdfPages(context: android.content.Context, uri: Uri, query: String): List<Int> =
+    withContext(Dispatchers.IO) {
+        if (query.isBlank() || !PDF_SEARCH_SUPPORTED) return@withContext emptyList()
+        val matches = mutableListOf<Int>()
+        context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+            val renderer = PdfRenderer(pfd)
+            for (i in 0 until renderer.pageCount) {
+                renderer.openPage(i).use { page ->
+                    try {
+                        if (page.searchText(query).isNotEmpty()) matches.add(i)
+                    } catch (e: Exception) {
+                        // bu cihaz/sürücü aramayı desteklemiyor olabilir; sayfa atlanır
+                    }
                 }
             }
+            renderer.close()
         }
-        renderer.close()
+        matches
     }
-    return matches
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     val context = LocalContext.current
-    var pages by remember { mutableStateOf<List<Bitmap>>(emptyList()) }
+    var pageInfos by remember { mutableStateOf<List<PdfPageInfo>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
+    var renderer by remember { mutableStateOf<PdfRenderer?>(null) }
+    val renderedPages = remember { mutableStateMapOf<Int, Bitmap>() }
+    val renderMutex = remember { Mutex() }
     var zoom by remember { mutableFloatStateOf(1f) }
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -132,51 +144,86 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                     libraryRepository.addReadingTime(uriKey, delta)
                 }
                 progressStore.savePdfPageIndex(uriKey, index)
-                if (pages.isNotEmpty()) {
-                    libraryRepository.updateProgress(uriKey, index, pages.size)
+                if (pageInfos.isNotEmpty()) {
+                    libraryRepository.updateProgress(uriKey, index, pageInfos.size)
                 }
                 isCurrentBookmarked = libraryRepository.isBookmarked(uriKey, index)
             }
     }
 
-    DisposableEffect(uri) {
-        onDispose {
-            pfd?.close()
-            pages.forEach { it.recycle() }
-        }
+    // Sadece ekranda görünen (+ küçük bir tampon) sayfalar render edilir; uzaklaşan
+    // sayfaların bitmap'leri bellekten geri alınır (recycle). Böylece 500 sayfalık bir
+    // PDF de tek seferde tüm sayfaları render eden eski yaklaşıma göre çok daha hızlı
+    // açılır ve bellek kullanımı sınırlı kalır.
+    LaunchedEffect(listState, pageInfos) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
+            .distinctUntilChanged()
+            .collect { visibleIndices ->
+                if (visibleIndices.isEmpty() || pageInfos.isEmpty()) return@collect
+                val minVisible = visibleIndices.min()
+                val maxVisible = visibleIndices.max()
+                val needed = (minVisible - RENDER_BUFFER_PAGES).coerceAtLeast(0)..
+                    (maxVisible + RENDER_BUFFER_PAGES).coerceAtMost(pageInfos.size - 1)
+
+                renderedPages.keys.filter { it !in needed }.forEach { idx ->
+                    renderedPages.remove(idx)?.recycle()
+                }
+
+                for (idx in needed) {
+                    if (renderedPages.containsKey(idx)) continue
+                    val r = renderer ?: break
+                    withContext(Dispatchers.IO) {
+                        renderMutex.withLock {
+                            if (!renderedPages.containsKey(idx)) {
+                                try {
+                                    r.openPage(idx).use { page ->
+                                        val scale = 2
+                                        val bmp = Bitmap.createBitmap(
+                                            page.width * scale,
+                                            page.height * scale,
+                                            Bitmap.Config.RGB_565
+                                        )
+                                        bmp.eraseColor(android.graphics.Color.WHITE)
+                                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                        renderedPages[idx] = bmp
+                                    }
+                                } catch (e: Exception) {
+                                    // sayfa render edilemedi; yer tutucu görünmeye devam eder
+                                }
+                            }
+                        }
+                    }
+                }
+            }
     }
 
-    LaunchedEffect(pages) {
-        if (pages.isNotEmpty()) {
-            libraryRepository.updateProgress(uriKey, listState.firstVisibleItemIndex, pages.size)
+    DisposableEffect(uri) {
+        onDispose {
+            renderedPages.values.forEach { it.recycle() }
+            renderedPages.clear()
+            renderer?.close()
+            pfd?.close()
         }
     }
 
     LaunchedEffect(uri) {
         try {
-            val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
-            pfd = descriptor
-            if (descriptor != null) {
-                val renderer = PdfRenderer(descriptor)
-                val bitmaps = mutableListOf<Bitmap>()
-                for (i in 0 until renderer.pageCount) {
-                    renderer.openPage(i).use { page ->
-                        val scale = 2 // ekran netliği için 2x render
-                        val bitmap = Bitmap.createBitmap(
-                            page.width * scale,
-                            page.height * scale,
-                            Bitmap.Config.ARGB_8888
-                        )
-                        bitmap.eraseColor(android.graphics.Color.WHITE)
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        bitmaps.add(bitmap)
+            withContext(Dispatchers.IO) {
+                val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+                pfd = descriptor
+                if (descriptor != null) {
+                    val r = PdfRenderer(descriptor)
+                    renderer = r
+                    // Sadece boyut bilgisi (genişlik/yükseklik) okunur, sayfalar henüz
+                    // render edilmez; bu yüzden bu adım büyük dosyalarda bile hızlıdır.
+                    val infos = (0 until r.pageCount).map { i ->
+                        r.openPage(i).use { page -> PdfPageInfo(page.width, page.height) }
                     }
+                    pageInfos = infos
+                    libraryRepository.recordOpened(context, uri, BookType.PDF)
+                } else {
+                    error = true
                 }
-                renderer.close()
-                pages = bitmaps
-                libraryRepository.recordOpened(context, uri, BookType.PDF)
-            } else {
-                error = true
             }
         } catch (e: Exception) {
             error = true
@@ -235,10 +282,11 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                     else -> {
                         val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
                         LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
-                            items(pages) { bitmap ->
+                            itemsIndexed(pageInfos) { index, info ->
                                 val targetWidth = screenWidthDp * zoom
-                                val aspect = bitmap.height.toFloat() / bitmap.width.toFloat()
+                                val aspect = info.height.toFloat() / info.width.toFloat()
                                 val targetHeight = targetWidth * aspect
+                                val bitmap = renderedPages[index]
 
                                 Row(
                                     modifier = Modifier
@@ -246,14 +294,29 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                                         .horizontalScroll(rememberScrollState())
                                         .background(MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Image(
-                                        bitmap = bitmap.asImageBitmap(),
-                                        contentDescription = null,
-                                        modifier = Modifier
-                                            .width(targetWidth)
-                                            .height(targetHeight)
-                                            .padding(vertical = 4.dp)
-                                    )
+                                    if (bitmap != null) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .width(targetWidth)
+                                                .height(targetHeight)
+                                                .padding(vertical = 4.dp)
+                                        )
+                                    } else {
+                                        // Sayfa henüz render edilmedi: doğru boyutta bir yer
+                                        // tutucu gösterilir, kaydırma davranışı bozulmaz.
+                                        Box(
+                                            modifier = Modifier
+                                                .width(targetWidth)
+                                                .height(targetHeight)
+                                                .padding(vertical = 4.dp)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -325,7 +388,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
-                    items(bookmarks, key = { it.id }) { bm ->
+                    itemsIndexed(bookmarks) { _, bm ->
                         Text(
                             text = bm.label,
                             style = MaterialTheme.typography.bodyLarge,

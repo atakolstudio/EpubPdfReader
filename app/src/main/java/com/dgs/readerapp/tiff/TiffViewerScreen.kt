@@ -47,8 +47,10 @@ import com.dgs.readerapp.R
 import com.dgs.readerapp.data.local.BookType
 import com.dgs.readerapp.data.repository.LibraryRepository
 import com.dgs.readerapp.data.ReadingProgressStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.withContext
 import org.beyka.tiffbitmapfactory.TiffBitmapFactory
 import java.io.File
 
@@ -105,27 +107,29 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
     LaunchedEffect(uri) {
         var tempFile: File? = null
         try {
-            tempFile = File(context.cacheDir, "tmp_tiff_${uri.hashCode()}.tiff")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                tempFile.outputStream().use { output -> input.copyTo(output) }
-            }
+            withContext(Dispatchers.IO) {
+                tempFile = File(context.cacheDir, "tmp_tiff_${uri.hashCode()}.tiff")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempFile!!.outputStream().use { output -> input.copyTo(output) }
+                }
 
-            val boundsOptions = TiffBitmapFactory.Options().apply { inJustDecodeBounds = true }
-            TiffBitmapFactory.decodeFile(tempFile, boundsOptions)
-            val directoryCount = boundsOptions.outDirectoryCount.coerceAtLeast(1)
+                val boundsOptions = TiffBitmapFactory.Options().apply { inJustDecodeBounds = true }
+                TiffBitmapFactory.decodeFile(tempFile, boundsOptions)
+                val directoryCount = boundsOptions.outDirectoryCount.coerceAtLeast(1)
 
-            val bitmaps = mutableListOf<Bitmap>()
-            for (i in 0 until directoryCount) {
-                val options = TiffBitmapFactory.Options().apply { inDirectoryNumber = i }
-                val bmp = TiffBitmapFactory.decodeFile(tempFile, options)
-                if (bmp != null) bitmaps.add(bmp)
-            }
+                val bitmaps = mutableListOf<Bitmap>()
+                for (i in 0 until directoryCount) {
+                    val options = TiffBitmapFactory.Options().apply { inDirectoryNumber = i }
+                    val bmp = TiffBitmapFactory.decodeFile(tempFile, options)
+                    if (bmp != null) bitmaps.add(bmp)
+                }
 
-            if (bitmaps.isEmpty()) {
-                error = true
-            } else {
-                pages = bitmaps
-                libraryRepository.recordOpened(context, uri, BookType.TIFF)
+                if (bitmaps.isEmpty()) {
+                    error = true
+                } else {
+                    pages = bitmaps
+                    libraryRepository.recordOpened(context, uri, BookType.TIFF)
+                }
             }
         } catch (e: Exception) {
             error = true

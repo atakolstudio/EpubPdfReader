@@ -59,7 +59,9 @@ import com.dgs.readerapp.R
 import com.dgs.readerapp.data.local.BookType
 import com.dgs.readerapp.data.repository.LibraryRepository
 import com.dgs.readerapp.data.ReadingProgressStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 private const val MIN_TEXT_ZOOM = 70
@@ -98,7 +100,7 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
 
     LaunchedEffect(uri) {
         try {
-            val parsed = EpubParser(context).parse(uri)
+            val parsed = withContext(Dispatchers.IO) { EpubParser(context).parse(uri) }
             book = parsed
             libraryRepository.recordOpened(context, uri, BookType.EPUB, parsed.coverFile)
         } catch (e: Exception) {
