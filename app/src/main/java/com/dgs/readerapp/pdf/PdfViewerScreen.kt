@@ -48,7 +48,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -70,15 +69,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 private const val MIN_ZOOM = 0.5f
 private const val MAX_ZOOM = 3f
 private const val ZOOM_STEP = 0.25f
 private const val MAX_READING_GAP_MS = 30 * 60 * 1000L
-private const val RENDER_BUFFER_PAGES = 2 // görünür aralığın öncesi/sonrası kaç sayfa önceden render edilsin
 
 /** Android 15 (API 35) öncesinde PdfRenderer metin arama desteklemez (yalnızca raster render). */
 val PDF_SEARCH_SUPPORTED = Build.VERSION.SDK_INT >= 35
@@ -110,12 +106,10 @@ private suspend fun searchPdfPages(context: android.content.Context, uri: Uri, q
 fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     val context = LocalContext.current
     var pageInfos by remember { mutableStateOf<List<PdfPageInfo>>(emptyList()) }
+    val pageBitmaps = remember { androidx.compose.runtime.mutableStateListOf<Bitmap?>() }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
-    var renderer by remember { mutableStateOf<PdfRenderer?>(null) }
-    val renderedPages = remember { mutableStateMapOf<Int, Bitmap>() }
-    val renderMutex = remember { Mutex() }
     var zoom by remember { mutableFloatStateOf(1f) }
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -151,83 +145,62 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
             }
     }
 
-    // Sadece ekranda görünen (+ küçük bir tampon) sayfalar render edilir; uzaklaşan
-    // sayfaların bitmap'leri bellekten geri alınır (recycle). Böylece 500 sayfalık bir
-    // PDF de tek seferde tüm sayfaları render eden eski yaklaşıma göre çok daha hızlı
-    // açılır ve bellek kullanımı sınırlı kalır.
-    LaunchedEffect(listState, pageInfos) {
-        snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.index } }
-            .distinctUntilChanged()
-            .collect { visibleIndices ->
-                if (visibleIndices.isEmpty() || pageInfos.isEmpty()) return@collect
-                val minVisible = visibleIndices.min()
-                val maxVisible = visibleIndices.max()
-                val needed = (minVisible - RENDER_BUFFER_PAGES).coerceAtLeast(0)..
-                    (maxVisible + RENDER_BUFFER_PAGES).coerceAtMost(pageInfos.size - 1)
-
-                renderedPages.keys.filter { it !in needed }.forEach { idx ->
-                    renderedPages.remove(idx)?.recycle()
-                }
-
-                for (idx in needed) {
-                    if (renderedPages.containsKey(idx)) continue
-                    val r = renderer ?: break
-                    withContext(Dispatchers.IO) {
-                        renderMutex.withLock {
-                            if (!renderedPages.containsKey(idx)) {
-                                try {
-                                    r.openPage(idx).use { page ->
-                                        val scale = 2
-                                        val bmp = Bitmap.createBitmap(
-                                            page.width * scale,
-                                            page.height * scale,
-                                            Bitmap.Config.RGB_565
-                                        )
-                                        bmp.eraseColor(android.graphics.Color.WHITE)
-                                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                        renderedPages[idx] = bmp
-                                    }
-                                } catch (e: Exception) {
-                                    // sayfa render edilemedi; yer tutucu görünmeye devam eder
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-    }
-
     DisposableEffect(uri) {
         onDispose {
-            renderedPages.values.forEach { it.recycle() }
-            renderedPages.clear()
-            renderer?.close()
+            pageBitmaps.forEach { it?.recycle() }
+            pageBitmaps.clear()
             pfd?.close()
         }
     }
 
+    // Önce sayfa boyutları (hızlı, sadece metadata) okunur ve liste hemen gösterilir;
+    // ardından sayfalar arka planda SIRAYLA render edilir ve her biri bitince ekranda
+    // anında belirir. Böylece kullanıcı saniyeler içinde içerik görmeye başlar, tüm
+    // PDF'in önceden render olmasını beklemez. Basit ve öngörülebilir olduğu için bu
+    // yaklaşım, kaydırmaya bağlı "sadece görüneni render et" mantığından daha güvenilirdir.
     LaunchedEffect(uri) {
         try {
             withContext(Dispatchers.IO) {
                 val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
                 pfd = descriptor
                 if (descriptor != null) {
-                    val r = PdfRenderer(descriptor)
-                    renderer = r
-                    // Sadece boyut bilgisi (genişlik/yükseklik) okunur, sayfalar henüz
-                    // render edilmez; bu yüzden bu adım büyük dosyalarda bile hızlıdır.
-                    val infos = (0 until r.pageCount).map { i ->
-                        r.openPage(i).use { page -> PdfPageInfo(page.width, page.height) }
+                    val renderer = PdfRenderer(descriptor)
+                    val count = renderer.pageCount
+                    val infos = ArrayList<PdfPageInfo>(count)
+                    for (i in 0 until count) {
+                        renderer.openPage(i).use { page -> infos.add(PdfPageInfo(page.width, page.height)) }
                     }
                     pageInfos = infos
+                    pageBitmaps.clear()
+                    repeat(count) { pageBitmaps.add(null) }
+                    isLoading = false
                     libraryRepository.recordOpened(context, uri, BookType.PDF)
+
+                    for (i in 0 until count) {
+                        try {
+                            renderer.openPage(i).use { page ->
+                                val scale = 2
+                                val bmp = Bitmap.createBitmap(
+                                    page.width * scale,
+                                    page.height * scale,
+                                    Bitmap.Config.RGB_565
+                                )
+                                bmp.eraseColor(android.graphics.Color.WHITE)
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                pageBitmaps[i] = bmp
+                            }
+                        } catch (e: Exception) {
+                            // bu sayfa render edilemedi; yer tutucu görünmeye devam eder, diğer sayfalar etkilenmez
+                        }
+                    }
+                    renderer.close()
                 } else {
                     error = true
+                    isLoading = false
                 }
             }
         } catch (e: Exception) {
             error = true
-        } finally {
             isLoading = false
         }
     }
@@ -286,7 +259,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                                 val targetWidth = screenWidthDp * zoom
                                 val aspect = info.height.toFloat() / info.width.toFloat()
                                 val targetHeight = targetWidth * aspect
-                                val bitmap = renderedPages[index]
+                                val bitmap = pageBitmaps.getOrNull(index)
 
                                 Row(
                                     modifier = Modifier
