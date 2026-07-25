@@ -183,7 +183,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                                 val bmp = Bitmap.createBitmap(
                                     page.width * scale,
                                     page.height * scale,
-                                    Bitmap.Config.RGB_565
+                                    Bitmap.Config.ARGB_8888
                                 )
                                 bmp.eraseColor(android.graphics.Color.WHITE)
                                 page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
