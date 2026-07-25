@@ -1,4 +1,4 @@
-name: Android CI - Build APK
+name: Android CI - Build & Test APK
 
 on:
   push:
@@ -34,8 +34,16 @@ jobs:
         with:
           gradle-version: 8.11.1
 
+      - name: Run unit tests
+        id: unit_tests
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest --no-daemon 2>&1 | tee unit_tests.log
+        continue-on-error: true
+
       - name: Build debug APK
         id: build_debug
+        if: steps.unit_tests.outcome == 'success'
         run: |
           set -o pipefail
           gradle assembleDebug --no-daemon 2>&1 | tee build_debug.log
@@ -50,47 +58,28 @@ jobs:
         continue-on-error: true
 
       - name: Report failure log as GitHub issue
-        if: steps.build_debug.outcome == 'failure' || steps.build_release.outcome == 'failure'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cat build_debug.log build_release.log 2>/dev/null | tail -c 55000 > tail.log
-          gh issue create \
-            --title "Build hatasi: ${GITHUB_SHA::7}" \
-            --body-file tail.log
-
-      - name: Fail job if build failed
-        if: steps.build_debug.outcome == 'failure' || steps.build_release.outcome == 'failure'
-        run: exit 1
-
-      - name: List build outputs (diagnostic)
-        if: always()
-        run: |
-          echo "--- find app/build/outputs ---"
-          find app/build/outputs -type f 2>&1 || true
-          echo "--- ls apk/debug ---"
-          ls -la app/build/outputs/apk/debug/ 2>&1 || true
-          echo "--- ls apk/release ---"
-          ls -la app/build/outputs/apk/release/ 2>&1 || true
-
-      - name: Report diagnostic as GitHub issue
-        if: always()
+        if: steps.unit_tests.outcome == 'failure' || steps.build_debug.outcome == 'failure' || steps.build_release.outcome == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
+            echo "unit_tests outcome: ${{ steps.unit_tests.outcome }}"
             echo "build_debug outcome: ${{ steps.build_debug.outcome }}"
             echo "build_release outcome: ${{ steps.build_release.outcome }}"
-            echo "--- find app/build/outputs ---"
-            find app/build/outputs -type f 2>&1 || true
-            echo "--- ls apk/debug ---"
-            ls -la app/build/outputs/apk/debug/ 2>&1 || true
-            echo "--- ls apk/release ---"
-            ls -la app/build/outputs/apk/release/ 2>&1 || true
-          } > diag.log
+            echo "--- unit test failures (varsa) ---"
+            find app/build/test-results -name "*.xml" -exec grep -l 'failures="[1-9]' {} \; 2>/dev/null | while read f; do
+              echo "== $f =="
+              cat "$f"
+            done
+          } > failure_summary.log
+          cat unit_tests.log build_debug.log build_release.log 2>/dev/null | tail -c 50000 >> failure_summary.log
           gh issue create \
-            --title "CI teshis: ${GITHUB_SHA::7}" \
-            --body-file diag.log
+            --title "Build/Test hatasi: ${GITHUB_SHA::7}" \
+            --body-file failure_summary.log
+
+      - name: Fail job if build or tests failed
+        if: steps.unit_tests.outcome == 'failure' || steps.build_debug.outcome == 'failure' || steps.build_release.outcome == 'failure'
+        run: exit 1
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -105,3 +94,11 @@ jobs:
           name: app-release-unsigned
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+
+      - name: Upload unit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore

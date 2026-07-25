@@ -315,13 +315,22 @@ fun HomeScreen(
 
             if (filtered.isEmpty()) {
                 item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(48.dp),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 56.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Icon(
+                            imageVector = if (books.isEmpty()) Icons.Filled.MenuBook else Icons.Filled.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(56.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(Modifier.height(12.dp))
                         Text(
                             text = if (books.isEmpty()) stringResource(R.string.library_empty) else "Sonuç bulunamadı.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 40.dp)
                         )
                     }
                 }
