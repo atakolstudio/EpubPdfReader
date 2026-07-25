@@ -2,30 +2,68 @@ package com.dgs.readerapp.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 
 private val LightColors = lightColorScheme(
-    primary = KotlinPurple,
-    onPrimary = OnPrimaryLight,
-    secondary = KotlinBlue,
-    tertiary = KotlinOrange,
+    primary = LightPrimary,
+    onPrimary = LightOnPrimary,
+    primaryContainer = LightPrimaryContainer,
+    onPrimaryContainer = LightOnPrimaryContainer,
+    secondary = LightSecondary,
+    onSecondary = LightOnSecondary,
+    secondaryContainer = LightSecondaryContainer,
+    onSecondaryContainer = LightOnSecondaryContainer,
+    tertiary = LightTertiary,
+    onTertiary = LightOnTertiary,
+    tertiaryContainer = LightTertiaryContainer,
+    onTertiaryContainer = LightOnTertiaryContainer,
     background = LightBackground,
-    surface = LightSurface
+    onBackground = LightOnBackground,
+    surface = LightSurface,
+    onSurface = LightOnSurface,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightOnSurfaceVariant,
+    outline = LightOutline
 )
 
 private val DarkColors = darkColorScheme(
-    primary = KotlinPurple,
-    onPrimary = OnPrimaryDark,
-    secondary = KotlinBlue,
-    tertiary = KotlinOrange,
+    primary = DarkPrimary,
+    onPrimary = DarkOnPrimary,
+    primaryContainer = DarkPrimaryContainer,
+    onPrimaryContainer = DarkOnPrimaryContainer,
+    secondary = DarkSecondary,
+    onSecondary = DarkOnSecondary,
+    secondaryContainer = DarkSecondaryContainer,
+    onSecondaryContainer = DarkOnSecondaryContainer,
+    tertiary = DarkTertiary,
+    onTertiary = DarkOnTertiary,
+    tertiaryContainer = DarkTertiaryContainer,
+    onTertiaryContainer = DarkOnTertiaryContainer,
     background = DarkBackground,
-    surface = DarkSurface
+    onBackground = DarkOnBackground,
+    surface = DarkSurface,
+    onSurface = DarkOnSurface,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    outline = DarkOutline
+)
+
+/** Uygulama genelinde tutarlı, yuvarlatılmış "modern/minimal" köşe sistemi. */
+val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(26.dp),
+    extraLarge = RoundedCornerShape(36.dp)
 )
 
 @Composable
@@ -46,6 +84,7 @@ fun EpubPdfReaderTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
+        shapes = AppShapes,
         typography = AppTypography,
         content = content
     )

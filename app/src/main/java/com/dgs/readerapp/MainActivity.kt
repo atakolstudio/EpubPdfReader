@@ -6,6 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
@@ -64,26 +68,35 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    when (val current = screen) {
-                        is Screen.Home -> HomeScreen(
-                            onPdfPicked = { uri -> screen = Screen.Pdf(uri) },
-                            onEpubPicked = { uri -> screen = Screen.Epub(uri) },
-                            onTiffPicked = { uri -> screen = Screen.Tiff(uri) },
-                            onOpenStats = { screen = Screen.Stats }
-                        )
-                        is Screen.Stats -> StatsScreen(onBack = { screen = Screen.Home })
-                        is Screen.Pdf -> PdfViewerScreen(
-                            uri = current.uri,
-                            onBack = { screen = Screen.Home }
-                        )
-                        is Screen.Epub -> EpubViewerScreen(
-                            uri = current.uri,
-                            onBack = { screen = Screen.Home }
-                        )
-                        is Screen.Tiff -> TiffViewerScreen(
-                            uri = current.uri,
-                            onBack = { screen = Screen.Home }
-                        )
+                    androidx.compose.animation.AnimatedContent(
+                        targetState = screen,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(260)))
+                                .togetherWith(fadeOut(animationSpec = tween(140)))
+                        },
+                        label = "screen_transition"
+                    ) { current ->
+                        when (current) {
+                            is Screen.Home -> HomeScreen(
+                                onPdfPicked = { uri -> screen = Screen.Pdf(uri) },
+                                onEpubPicked = { uri -> screen = Screen.Epub(uri) },
+                                onTiffPicked = { uri -> screen = Screen.Tiff(uri) },
+                                onOpenStats = { screen = Screen.Stats }
+                            )
+                            is Screen.Stats -> StatsScreen(onBack = { screen = Screen.Home })
+                            is Screen.Pdf -> PdfViewerScreen(
+                                uri = current.uri,
+                                onBack = { screen = Screen.Home }
+                            )
+                            is Screen.Epub -> EpubViewerScreen(
+                                uri = current.uri,
+                                onBack = { screen = Screen.Home }
+                            )
+                            is Screen.Tiff -> TiffViewerScreen(
+                                uri = current.uri,
+                                onBack = { screen = Screen.Home }
+                            )
+                        }
                     }
                 }
             }
