@@ -5,4 +5,12 @@
         <item name="android:windowLightStatusBar" tools:targetApi="23">true</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
     </style>
+
+    <!-- Android 12+ SplashScreen API; androidx.core:core-splashscreen ile API 26+ tüm
+         cihazlarda tutarlı davranış sağlar. Uygulama simgesiyle aynı Kotlin moru. -->
+    <style name="Theme.EpubPdfReader.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.EpubPdfReader</item>
+    </style>
 </resources>

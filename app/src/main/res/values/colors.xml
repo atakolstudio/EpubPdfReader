@@ -1,0 +1,4 @@
+<resources>
+    <!-- Kotlin marka moru: uygulama simgesiyle ve splash screen ile tutarlı -->
+    <color name="splash_background">#7F52FF</color>
+</resources>

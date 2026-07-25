@@ -3,6 +3,7 @@ package com.dgs.readerapp
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.dgs.readerapp.epub.EpubViewerScreen
 import com.dgs.readerapp.pdf.PdfViewerScreen
 import com.dgs.readerapp.tiff.TiffViewerScreen
@@ -28,6 +30,10 @@ private sealed class Screen {
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Android 12+ SplashScreen API; androidx.core:core-splashscreen ile
+        // API 26+ tüm desteklenen cihazlarda tutarlı davranır. super.onCreate()'den
+        // ÖNCE çağrılmalı.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         // Modern kenardan kenara (edge-to-edge) görünüm - Android 15 (SDK 35+) zorunlu kılıyor
         enableEdgeToEdge()
@@ -47,6 +53,14 @@ class MainActivity : ComponentActivity() {
                             else -> Screen.Pdf(viewUri)
                         }
                     )
+                }
+
+                // Sistem geri tuşu/kaydırması: alt ekranlardayken (PDF/EPUB/TIFF/İstatistik)
+                // önce Kitaplığım'a döner, uygulamayı doğrudan kapatmaz. Home'dayken bu
+                // handler devre dışı kalır ve sistemin varsayılan (uygulamayı kapatma)
+                // davranışı çalışır.
+                BackHandler(enabled = screen != Screen.Home) {
+                    screen = Screen.Home
                 }
 
                 Surface(modifier = Modifier.fillMaxSize()) {

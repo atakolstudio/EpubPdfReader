@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -172,28 +173,35 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                     // Sağ/sol kaydırma (swipe) ile bölümler arası geçiş.
                     // Dikey kaydırma WebView içinde normal şekilde çalışmaya devam eder,
                     // çünkü HorizontalPager sadece yatay hareketleri kendisi yönetir.
-                    Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize()
-                        ) { page ->
-                            EpubWebView(
-                                chapterFile = b.chapters[page],
-                                extractDir = b.extractDir,
-                                textZoom = textZoom,
-                                readingMode = readingMode,
-                                styleVersion = styleVersion
-                            )
-                        }
+                    // Tablet/katlanabilir gibi geniş ekranlarda okuma alanı ortalanır ve
+                    // satırların aşırı uzayıp okunmasının zorlaşmaması için genişlik sınırlanır.
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(modifier = Modifier.widthIn(max = 700.dp).fillMaxSize()) {
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.fillMaxSize()
+                            ) { page ->
+                                EpubWebView(
+                                    chapterFile = b.chapters[page],
+                                    extractDir = b.extractDir,
+                                    textZoom = textZoom,
+                                    readingMode = readingMode,
+                                    styleVersion = styleVersion
+                                )
+                            }
 
-                        // Sepya modunda WebView üzerine dokunuşları engellemeyen,
-                        // sadece görsel olarak ısıtan yarı saydam bir katman.
-                        if (readingMode == ReadingMode.SEPIA) {
-                            Box(
-                                modifier = Modifier
-                                    .matchParentSize()
-                                    .background(Color(0xFFF4E9D0).copy(alpha = 0.28f))
-                            )
+                            // Sepya modunda WebView üzerine dokunuşları engellemeyen,
+                            // sadece görsel olarak ısıtan yarı saydam bir katman.
+                            if (readingMode == ReadingMode.SEPIA) {
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(Color(0xFFF4E9D0).copy(alpha = 0.28f))
+                                )
+                            }
                         }
                     }
 
