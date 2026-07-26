@@ -10,6 +10,8 @@ import com.dgs.readerapp.data.local.BookEntity
 import com.dgs.readerapp.data.local.BookType
 import com.dgs.readerapp.data.local.BookmarkDao
 import com.dgs.readerapp.data.local.BookmarkEntity
+import com.dgs.readerapp.data.local.NoteDao
+import com.dgs.readerapp.data.local.NoteEntity
 import com.dgs.readerapp.data.queryDisplayName
 import com.dgs.readerapp.data.pushContinueReadingShortcut
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +26,8 @@ import java.io.File
  */
 class LibraryRepository(
     private val dao: BookDao,
-    private val bookmarkDao: BookmarkDao
+    private val bookmarkDao: BookmarkDao,
+    private val noteDao: NoteDao
 ) {
 
     fun observeBooks(): Flow<List<BookEntity>> = dao.observeAll()
@@ -89,6 +92,20 @@ class LibraryRepository(
 
     suspend fun removeBookmark(id: Long) = bookmarkDao.deleteById(id)
 
+    fun observeNotes(bookId: String): Flow<List<NoteEntity>> = noteDao.observeForBook(bookId)
+
+    suspend fun addNote(bookId: String, position: Int, content: String) {
+        if (content.isBlank()) return
+        noteDao.insert(NoteEntity(bookId = bookId, position = position, content = content.trim()))
+    }
+
+    suspend fun updateNote(note: NoteEntity, content: String) {
+        if (content.isBlank()) return
+        noteDao.update(note.copy(content = content.trim()))
+    }
+
+    suspend fun deleteNote(id: Long) = noteDao.deleteById(id)
+
     suspend fun exportAll(): List<BookEntity> = dao.getAllOnce()
 
     suspend fun importAll(books: List<BookEntity>) {
@@ -124,7 +141,7 @@ class LibraryRepository(
     companion object {
         fun create(context: Context): LibraryRepository {
             val db = AppDatabase.getInstance(context)
-            return LibraryRepository(db.bookDao(), db.bookmarkDao())
+            return LibraryRepository(db.bookDao(), db.bookmarkDao(), db.noteDao())
         }
     }
 }

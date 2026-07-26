@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -25,7 +26,10 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -33,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -94,6 +99,8 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
     var showToc by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
+    var noteDraft by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val progressStore = remember { ReadingProgressStore(context) }
     val libraryRepository = remember { LibraryRepository.create(context) }
@@ -128,6 +135,9 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                     }
                     IconButton(onClick = { showBookmarks = true }) {
                         Icon(Icons.Filled.Bookmarks, contentDescription = "Yer imlerim")
+                    }
+                    IconButton(onClick = { showNotes = true }) {
+                        Icon(Icons.Filled.EditNote, contentDescription = "Notlarım")
                     }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Filled.Settings, contentDescription = "Okuma ayarları")
@@ -294,6 +304,72 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    if (showNotes) {
+                        val notes by libraryRepository.observeNotes(uriKey).collectAsState(initial = emptyList())
+                        ModalBottomSheet(onDismissRequest = { showNotes = false }) {
+                            Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                                Text("Notlarım", style = MaterialTheme.typography.titleLarge)
+                                OutlinedTextField(
+                                    value = noteDraft,
+                                    onValueChange = { noteDraft = it },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                                    placeholder = { Text("Bu bölümle ilgili bir not yaz…") },
+                                    minLines = 2,
+                                    maxLines = 4
+                                )
+                                androidx.compose.material3.Button(
+                                    onClick = {
+                                        val text = noteDraft
+                                        scope.launch {
+                                            libraryRepository.addNote(uriKey, pagerState.currentPage, text)
+                                        }
+                                        noteDraft = ""
+                                    },
+                                    enabled = noteDraft.isNotBlank(),
+                                    modifier = Modifier.padding(top = 8.dp)
+                                ) { Text("Ekle") }
+                            }
+
+                            if (notes.isEmpty()) {
+                                Text(
+                                    "Henüz not eklemedin.",
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                                )
+                            } else {
+                                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+                                    items(notes, key = { it.id }) { note ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable {
+                                                        scope.launch { pagerState.animateScrollToPage(note.position) }
+                                                        showNotes = false
+                                                    }
+                                            ) {
+                                                Text(
+                                                    text = "Bölüm ${note.position + 1}",
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(text = note.content, style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                            IconButton(onClick = {
+                                                scope.launch { libraryRepository.deleteNote(note.id) }
+                                            }) {
+                                                Icon(Icons.Filled.Delete, contentDescription = "Notu sil")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
 

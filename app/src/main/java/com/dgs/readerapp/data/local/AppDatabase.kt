@@ -5,10 +5,11 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [BookEntity::class, BookmarkEntity::class], version = 2, exportSchema = false)
+@Database(entities = [BookEntity::class, BookmarkEntity::class, NoteEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun noteDao(): NoteDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
