@@ -95,7 +95,7 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Kaydırmayı bozmadan pinch-zoom / çift dokunuşla yakınlaştırma (PDF, TIFF)
-    implementation("net.engawapg.lib:zoomable:2.11.1")
+    implementation("net.engawapg.lib:zoomable:2.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
