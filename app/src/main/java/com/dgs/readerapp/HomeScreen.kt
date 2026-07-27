@@ -78,6 +78,7 @@ import com.dgs.readerapp.data.formatDate
 import com.dgs.readerapp.data.formatFileSize
 import com.dgs.readerapp.data.local.BookEntity
 import com.dgs.readerapp.data.local.BookType
+import com.dgs.readerapp.ui.components.CoverPlaceholder
 import com.dgs.readerapp.ui.components.shimmerEffect
 import com.dgs.readerapp.ui.library.LibraryViewModel
 import com.dgs.readerapp.ui.library.SortOption
@@ -445,31 +446,17 @@ private fun BookCard(
                             Box(Modifier.fillMaxSize().clip(MaterialTheme.shapes.small).shimmerEffect())
                         },
                         error = {
-                            Box(
-                                modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = bookTypeIcon(book.type),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                            CoverPlaceholder(
+                                title = book.name,
+                                modifier = Modifier.clip(MaterialTheme.shapes.small)
+                            )
                         }
                     )
                 } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.small)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = bookTypeIcon(book.type),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    CoverPlaceholder(
+                        title = book.name,
+                        modifier = Modifier.clip(MaterialTheme.shapes.small)
+                    )
                 }
             }
 

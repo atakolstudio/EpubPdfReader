@@ -246,7 +246,17 @@ fun EpubViewerScreen(uri: Uri, onBack: () -> Unit) {
                             )
                         }
 
-                        Text("${pagerState.currentPage + 1} / ${b.chapters.size}")
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${pagerState.currentPage + 1} / ${b.chapters.size}")
+                            val percent = if (b.chapters.size > 1) {
+                                (pagerState.currentPage * 100) / (b.chapters.size - 1)
+                            } else 100
+                            Text(
+                                text = "%$percent",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
 
                         IconButton(
                             onClick = {

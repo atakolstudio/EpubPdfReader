@@ -28,7 +28,9 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -118,6 +120,8 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     var showBookmarks by remember { mutableStateOf(false) }
     var isCurrentBookmarked by remember { mutableStateOf(false) }
     var isFullScreen by remember { mutableStateOf(false) }
+    var showGoToPage by remember { mutableStateOf(false) }
+    var goToPageText by remember { mutableStateOf("") }
     val activity = context as? Activity
 
     // Tam ekran: sistem çubuklarını (durum/gezinme) ve uygulama başlık çubuğunu
@@ -262,6 +266,9 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                             imageVector = if (isCurrentBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
                             contentDescription = "Yer imi ekle/kaldır"
                         )
+                    }
+                    IconButton(onClick = { showGoToPage = true }) {
+                        Icon(Icons.Filled.MenuBook, contentDescription = "Sayfaya git")
                     }
                     IconButton(onClick = { isFullScreen = true }) {
                         Icon(Icons.Filled.Fullscreen, contentDescription = "Tam ekran")
@@ -423,5 +430,35 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showGoToPage) {
+        AlertDialog(
+            onDismissRequest = { showGoToPage = false },
+            title = { Text("Sayfaya git") },
+            text = {
+                OutlinedTextField(
+                    value = goToPageText,
+                    onValueChange = { input -> goToPageText = input.filter { it.isDigit() } },
+                    placeholder = { Text("Sayfa numarası (1-${pageInfos.size})") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(onClick = {
+                    val target = goToPageText.toIntOrNull()
+                    if (target != null && target in 1..pageInfos.size) {
+                        scope.launch { listState.animateScrollToItem(target - 1) }
+                    }
+                    showGoToPage = false
+                    goToPageText = ""
+                }) { Text("Git") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showGoToPage = false; goToPageText = "" }) {
+                    Text("İptal")
+                }
+            }
+        )
     }
 }

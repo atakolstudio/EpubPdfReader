@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.RotateLeft
+import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +78,7 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
     var error by remember { mutableStateOf(false) }
     var lastTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var isFullScreen by remember { mutableStateOf(false) }
+    var rotationDegrees by remember { mutableIntStateOf(0) }
     val activity = context as? Activity
 
     LaunchedEffect(isFullScreen) {
@@ -172,6 +176,12 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { rotationDegrees = (rotationDegrees - 90 + 360) % 360 }) {
+                            Icon(Icons.Filled.RotateLeft, contentDescription = "Sola döndür")
+                        }
+                        IconButton(onClick = { rotationDegrees = (rotationDegrees + 90) % 360 }) {
+                            Icon(Icons.Filled.RotateRight, contentDescription = "Sağa döndür")
+                        }
                         IconButton(onClick = { isFullScreen = true }) {
                             Icon(Icons.Filled.Fullscreen, contentDescription = "Tam ekran")
                         }
@@ -198,17 +208,28 @@ fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
                         state = listState
                     ) {
                         items(pages) { bitmap ->
+                            val rotatedBitmap = remember(bitmap, rotationDegrees) {
+                                if (rotationDegrees == 0) {
+                                    bitmap
+                                } else {
+                                    val matrix = android.graphics.Matrix().apply {
+                                        postRotate(rotationDegrees.toFloat())
+                                    }
+                                    Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                                }
+                            }
+                            val aspect = rotatedBitmap.height.toFloat() / rotatedBitmap.width.toFloat()
                             val targetWidth = screenWidthDp
-                            val aspect = bitmap.height.toFloat() / bitmap.width.toFloat()
                             val targetHeight = targetWidth * aspect
 
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surface)
+                                    .background(MaterialTheme.colorScheme.surface),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Image(
-                                    bitmap = bitmap.asImageBitmap(),
+                                    bitmap = rotatedBitmap.asImageBitmap(),
                                     contentDescription = null,
                                     modifier = Modifier
                                         .width(targetWidth)

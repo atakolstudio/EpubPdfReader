@@ -1,5 +1,6 @@
 package com.dgs.readerapp
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -42,8 +43,19 @@ class MainActivity : ComponentActivity() {
         // Modern kenardan kenara (edge-to-edge) görünüm - Android 15 (SDK 35+) zorunlu kılıyor
         enableEdgeToEdge()
 
-        // Uygulama .pdf / .epub / .tiff dosyasıyla açıldıysa (VIEW intent) ilgili ekranı aç
-        val viewUri: Uri? = intent?.data
+        // Uygulama .pdf / .epub / .tiff dosyasıyla açıldıysa (VIEW intent) ya da başka
+        // bir uygulamadan "Paylaş" (SEND intent) ile gönderildiyse ilgili ekranı aç.
+        val viewUri: Uri? = when (intent?.action) {
+            Intent.ACTION_SEND -> {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+            }
+            else -> intent?.data
+        }
         val viewType: String? = intent?.type
 
         setContent {
