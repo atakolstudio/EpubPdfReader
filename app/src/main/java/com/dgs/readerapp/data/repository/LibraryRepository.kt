@@ -43,7 +43,11 @@ class LibraryRepository(
         val existing = dao.getById(uriKey)
         val name = queryDisplayName(context, uri)
         val size = querySize(context, uri)
-        val cover = existing?.coverPath ?: generateCover(context, uri, uriKey, type, epubCoverFile)
+        val coverResult = if (existing?.coverPath == null) {
+            generateCover(context, uri, uriKey, type, epubCoverFile)
+        } else {
+            null
+        }
 
         val entity = (existing ?: BookEntity(
             id = uriKey,
@@ -55,7 +59,8 @@ class LibraryRepository(
             name = name,
             type = type,
             fileSizeBytes = size,
-            coverPath = cover,
+            coverPath = coverResult?.path ?: existing?.coverPath,
+            accentColor = coverResult?.accentColor ?: existing?.accentColor,
             lastOpened = System.currentTimeMillis()
         )
         dao.upsert(entity)
@@ -118,7 +123,7 @@ class LibraryRepository(
         uriKey: String,
         type: String,
         epubCoverFile: File?
-    ): String? = when (type) {
+    ): com.dgs.readerapp.data.CoverResult? = when (type) {
         BookType.PDF -> CoverGenerator.generatePdfCover(context, uri, uriKey)
         BookType.TIFF -> CoverGenerator.generateTiffCover(context, uri, uriKey)
         BookType.EPUB -> epubCoverFile?.let { CoverGenerator.saveEpubCover(context, it, uriKey) }

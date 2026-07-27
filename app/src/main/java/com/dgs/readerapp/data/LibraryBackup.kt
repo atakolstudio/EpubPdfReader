@@ -17,6 +17,7 @@ object LibraryBackup {
                     put("path", b.path)
                     put("type", b.type)
                     put("coverPath", b.coverPath ?: JSONObject.NULL)
+                    put("accentColor", b.accentColor ?: JSONObject.NULL)
                     put("lastPage", b.lastPage)
                     put("totalPages", b.totalPages)
                     put("progress", b.progress.toDouble())
@@ -42,6 +43,7 @@ object LibraryBackup {
                     path = o.getString("path"),
                     type = o.getString("type"),
                     coverPath = if (o.isNull("coverPath")) null else o.optString("coverPath"),
+                    accentColor = if (o.has("accentColor") && !o.isNull("accentColor")) o.optInt("accentColor") else null,
                     lastPage = o.optInt("lastPage", 0),
                     totalPages = o.optInt("totalPages", 0),
                     progress = o.optDouble("progress", 0.0).toFloat(),

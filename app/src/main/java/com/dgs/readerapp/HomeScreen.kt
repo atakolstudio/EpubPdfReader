@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -64,6 +65,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
@@ -384,29 +388,48 @@ private fun ActionTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // "Cam efekti" (glassmorphism): gerçek arka plan bulanıklığı Compose'da
+    // native desteklenmediği için, buzlu cam görünümü yarı saydam gradyan +
+    // ince ışıltılı kenarlık + hafif gölge kombinasyonuyla elde edilir.
+    val glassBrush = Brush.linearGradient(
+        colors = listOf(
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
+        )
+    )
+    val borderBrush = Brush.linearGradient(
+        colors = listOf(Color.White.copy(alpha = 0.5f), Color.White.copy(alpha = 0.05f))
+    )
+
     Card(
         onClick = onClick,
-        modifier = modifier.aspectRatio(0.95f),
+        modifier = modifier
+            .aspectRatio(0.95f)
+            .shadow(elevation = 6.dp, shape = MaterialTheme.shapes.large, clip = false),
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(glassBrush)
+                .border(width = 1.dp, brush = borderBrush, shape = MaterialTheme.shapes.large)
+                .padding(12.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                tint = Color.White,
                 modifier = Modifier.size(32.dp)
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = Color.White,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 maxLines = 2
             )
@@ -468,10 +491,12 @@ private fun BookCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 if (book.totalPages > 0) {
+                    val accentColor = book.accentColor?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(
                         progress = { book.progress.coerceIn(0f, 1f) },
                         modifier = Modifier.fillMaxWidth().height(4.dp).clip(MaterialTheme.shapes.extraSmall),
+                        color = accentColor,
                         strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                     )
                     Spacer(Modifier.height(4.dp))

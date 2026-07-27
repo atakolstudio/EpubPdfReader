@@ -16,6 +16,7 @@ data class BookEntity(
     val path: String,                  // aynı content URI (spesifikasyonla uyum için ayrı tutulur)
     val type: String,                  // BookType.PDF / EPUB / TIFF
     val coverPath: String? = null,     // önbelleğe alınmış kapak görseli dosya yolu
+    val accentColor: Int? = null,      // kapaktan çıkarılan kişiselleştirilmiş aksan rengi (ARGB)
     val lastPage: Int = 0,
     val totalPages: Int = 0,
     val progress: Float = 0f,          // 0f..1f

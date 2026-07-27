@@ -97,6 +97,9 @@ dependencies {
     // Kaydırmayı bozmadan pinch-zoom / çift dokunuşla yakınlaştırma (PDF, TIFF)
     implementation("net.engawapg.lib:zoomable:2.8.1")
 
+    // Kapak resminden dinamik aksan rengi çıkarma (Palette API)
+    implementation("androidx.palette:palette-ktx:1.0.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
