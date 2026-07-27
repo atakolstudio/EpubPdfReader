@@ -52,6 +52,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
+import net.engawapg.lib.zoomable.ExperimentalZoomableApi
 import net.engawapg.lib.zoomable.rememberZoomState
 import net.engawapg.lib.zoomable.zoomableWithScroll
 import org.beyka.tiffbitmapfactory.TiffBitmapFactory
@@ -65,7 +66,7 @@ import java.io.File
  * yakınlaştırma, PDF görüntüleyiciyle aynı `zoomableWithScroll` deseniyle
  * (dikey kaydırmayı bozmadan) sağlanır.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalZoomableApi::class)
 @Composable
 fun TiffViewerScreen(uri: Uri, onBack: () -> Unit) {
     val context = LocalContext.current

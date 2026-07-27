@@ -71,6 +71,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.engawapg.lib.zoomable.ExperimentalZoomableApi
 import net.engawapg.lib.zoomable.rememberZoomState
 import net.engawapg.lib.zoomable.zoomableWithScroll
 
@@ -101,7 +102,7 @@ private suspend fun searchPdfPages(context: android.content.Context, uri: Uri, q
         matches
     }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalZoomableApi::class)
 @Composable
 fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     val context = LocalContext.current
