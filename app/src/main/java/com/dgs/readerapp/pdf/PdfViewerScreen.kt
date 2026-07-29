@@ -2,6 +2,7 @@ package com.dgs.readerapp.pdf
 
 import android.app.Activity
 import android.graphics.Bitmap
+import android.graphics.pdf.LoadParams
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Build
@@ -10,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,9 +32,12 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +45,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -55,11 +61,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -81,6 +90,23 @@ private const val MAX_READING_GAP_MS = 30 * 60 * 1000L
 
 /** Android 15 (API 35) öncesinde PdfRenderer metin arama desteklemez (yalnızca raster render). */
 val PDF_SEARCH_SUPPORTED = Build.VERSION.SDK_INT >= 35
+
+/** Şifreli PDF açma (LoadParams ile) da Android 15 (API 35) itibarıyla destekleniyor. */
+private val PDF_PASSWORD_SUPPORTED = Build.VERSION.SDK_INT >= 35
+
+// Sayfa görüntüsünü tersine çevirerek (siyah zemin/açık yazı) gece okumasını
+// rahatlatan renk matrisi. Sadece görüntü katmanına uygulanır, orijinal PDF
+// verisi değişmez.
+private val nightInvertMatrix = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+)
 
 private data class PdfPageInfo(val width: Int, val height: Int)
 
@@ -112,6 +138,9 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     val pageBitmaps = remember { androidx.compose.runtime.mutableStateListOf<Bitmap?>() }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf(false) }
+    var needsPassword by remember { mutableStateOf(false) }
+    var passwordWasWrong by remember { mutableStateOf(false) }
+    var passwordAttempt by remember { mutableStateOf<String?>(null) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -122,6 +151,9 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
     var isFullScreen by remember { mutableStateOf(false) }
     var showGoToPage by remember { mutableStateOf(false) }
     var goToPageText by remember { mutableStateOf("") }
+    var showViewOptions by remember { mutableStateOf(false) }
+    var isNightMode by remember { mutableStateOf(false) }
+    var rotationDegrees by remember { mutableIntStateOf(0) }
     val activity = context as? Activity
 
     // Tam ekran: sistem çubuklarını (durum/gezinme) ve uygulama başlık çubuğunu
@@ -184,49 +216,67 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
 
     // Önce sayfa boyutları (hızlı, sadece metadata) okunur ve liste hemen gösterilir;
     // ardından sayfalar arka planda SIRAYLA render edilir ve her biri bitince ekranda
-    // anında belirir. Böylece kullanıcı saniyeler içinde içerik görmeye başlar, tüm
-    // PDF'in önceden render olmasını beklemez. Basit ve öngörülebilir olduğu için bu
-    // yaklaşım, kaydırmaya bağlı "sadece görüneni render et" mantığından daha güvenilirdir.
-    LaunchedEffect(uri) {
+    // anında belirir. `passwordAttempt` anahtar listesine dahildir: kullanıcı şifre
+    // girip tekrar denediğinde bu effect'in yeniden çalışmasını sağlar.
+    LaunchedEffect(uri, passwordAttempt) {
+        isLoading = true
+        error = false
+        needsPassword = false
         try {
             withContext(Dispatchers.IO) {
                 val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
                 pfd = descriptor
-                if (descriptor != null) {
-                    val renderer = PdfRenderer(descriptor)
-                    val count = renderer.pageCount
-                    val infos = ArrayList<PdfPageInfo>(count)
-                    for (i in 0 until count) {
-                        renderer.openPage(i).use { page -> infos.add(PdfPageInfo(page.width, page.height)) }
-                    }
-                    pageInfos = infos
-                    pageBitmaps.clear()
-                    repeat(count) { pageBitmaps.add(null) }
-                    isLoading = false
-                    libraryRepository.recordOpened(context, uri, BookType.PDF)
-
-                    for (i in 0 until count) {
-                        try {
-                            renderer.openPage(i).use { page ->
-                                val scale = 2
-                                val bmp = Bitmap.createBitmap(
-                                    page.width * scale,
-                                    page.height * scale,
-                                    Bitmap.Config.ARGB_8888
-                                )
-                                bmp.eraseColor(android.graphics.Color.WHITE)
-                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                                pageBitmaps[i] = bmp
-                            }
-                        } catch (e: Exception) {
-                            // bu sayfa render edilemedi; yer tutucu görünmeye devam eder, diğer sayfalar etkilenmez
-                        }
-                    }
-                    renderer.close()
-                } else {
+                if (descriptor == null) {
                     error = true
                     isLoading = false
+                    return@withContext
                 }
+
+                val renderer = try {
+                    val currentPassword = passwordAttempt
+                    if (currentPassword != null && PDF_PASSWORD_SUPPORTED) {
+                        val params = LoadParams.Builder().setPassword(currentPassword).build()
+                        PdfRenderer(descriptor, params)
+                    } else {
+                        PdfRenderer(descriptor)
+                    }
+                } catch (se: SecurityException) {
+                    // Şifre yanlış ya da hiç girilmedi: kullanıcıya şifre sorulur.
+                    needsPassword = true
+                    passwordWasWrong = passwordAttempt != null
+                    isLoading = false
+                    return@withContext
+                }
+
+                val count = renderer.pageCount
+                val infos = ArrayList<PdfPageInfo>(count)
+                for (i in 0 until count) {
+                    renderer.openPage(i).use { page -> infos.add(PdfPageInfo(page.width, page.height)) }
+                }
+                pageInfos = infos
+                pageBitmaps.clear()
+                repeat(count) { pageBitmaps.add(null) }
+                isLoading = false
+                libraryRepository.recordOpened(context, uri, BookType.PDF)
+
+                for (i in 0 until count) {
+                    try {
+                        renderer.openPage(i).use { page ->
+                            val scale = 2
+                            val bmp = Bitmap.createBitmap(
+                                page.width * scale,
+                                page.height * scale,
+                                Bitmap.Config.ARGB_8888
+                            )
+                            bmp.eraseColor(android.graphics.Color.WHITE)
+                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            pageBitmaps[i] = bmp
+                        }
+                    } catch (e: Exception) {
+                        // bu sayfa render edilemedi; yer tutucu görünmeye devam eder, diğer sayfalar etkilenmez
+                    }
+                }
+                renderer.close()
             }
         } catch (e: Exception) {
             error = true
@@ -238,50 +288,62 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
         topBar = {
             if (!isFullScreen) {
                 TopAppBar(
-                title = { Text(context.getString(R.string.app_name)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
-                    }
-                },
-                actions = {
-                    if (PDF_SEARCH_SUPPORTED) {
-                        IconButton(onClick = { showSearch = !showSearch }) {
-                            Icon(Icons.Filled.Search, contentDescription = "Ara")
+                    title = { Text(context.getString(R.string.app_name)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
                         }
-                    }
-                    IconButton(onClick = { showBookmarks = true }) {
-                        Icon(Icons.Filled.Bookmarks, contentDescription = "Yer imlerim")
-                    }
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                val page = listState.firstVisibleItemIndex
-                                libraryRepository.toggleBookmark(uriKey, page, "Sayfa ${page + 1}")
-                                isCurrentBookmarked = !isCurrentBookmarked
+                    },
+                    actions = {
+                        if (PDF_SEARCH_SUPPORTED) {
+                            IconButton(onClick = { showSearch = !showSearch }) {
+                                Icon(Icons.Filled.Search, contentDescription = "Ara")
                             }
                         }
-                    ) {
-                        Icon(
-                            imageVector = if (isCurrentBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                            contentDescription = "Yer imi ekle/kaldır"
-                        )
+                        IconButton(onClick = { showBookmarks = true }) {
+                            Icon(Icons.Filled.Bookmarks, contentDescription = "Yer imlerim")
+                        }
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    val page = listState.firstVisibleItemIndex
+                                    libraryRepository.toggleBookmark(uriKey, page, "Sayfa ${page + 1}")
+                                    isCurrentBookmarked = !isCurrentBookmarked
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isCurrentBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                                contentDescription = "Yer imi ekle/kaldır"
+                            )
+                        }
+                        IconButton(onClick = { showGoToPage = true }) {
+                            Icon(Icons.Filled.MenuBook, contentDescription = "Sayfaya git")
+                        }
+                        IconButton(onClick = { showViewOptions = true }) {
+                            Icon(Icons.Filled.Tune, contentDescription = "Görünüm ayarları")
+                        }
+                        IconButton(onClick = { isFullScreen = true }) {
+                            Icon(Icons.Filled.Fullscreen, contentDescription = "Tam ekran")
+                        }
                     }
-                    IconButton(onClick = { showGoToPage = true }) {
-                        Icon(Icons.Filled.MenuBook, contentDescription = "Sayfaya git")
-                    }
-                    IconButton(onClick = { isFullScreen = true }) {
-                        Icon(Icons.Filled.Fullscreen, contentDescription = "Tam ekran")
-                    }
-                }
                 )
             }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (isNightMode) androidx.compose.ui.graphics.Color.Black else MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
                 when {
                     isLoading -> CircularProgressIndicator()
+                    needsPassword -> Text(
+                        if (PDF_PASSWORD_SUPPORTED) "Şifre bekleniyor…" else "Bu PDF şifre korumalı.",
+                        modifier = Modifier.padding(24.dp)
+                    )
                     error -> Text(context.getString(R.string.error_loading))
                     else -> {
                         val screenWidthDp = LocalConfiguration.current.screenWidthDp.dp
@@ -295,20 +357,38 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                             state = listState
                         ) {
                             itemsIndexed(pageInfos) { index, info ->
-                                val targetWidth = screenWidthDp
-                                val aspect = info.height.toFloat() / info.width.toFloat()
-                                val targetHeight = targetWidth * aspect
                                 val bitmap = pageBitmaps.getOrNull(index)
+                                val displayedBitmap = remember(bitmap, rotationDegrees) {
+                                    if (bitmap == null || rotationDegrees == 0) {
+                                        bitmap
+                                    } else {
+                                        val matrix = android.graphics.Matrix().apply {
+                                            postRotate(rotationDegrees.toFloat())
+                                        }
+                                        Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                                    }
+                                }
+                                val aspect = if (displayedBitmap != null) {
+                                    displayedBitmap.height.toFloat() / displayedBitmap.width.toFloat()
+                                } else {
+                                    val isSideways = rotationDegrees == 90 || rotationDegrees == 270
+                                    val base = info.height.toFloat() / info.width.toFloat()
+                                    if (isSideways) 1f / base else base
+                                }
+                                val targetWidth = screenWidthDp
+                                val targetHeight = targetWidth * aspect
 
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(MaterialTheme.colorScheme.surface)
+                                        .background(MaterialTheme.colorScheme.surface),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    if (bitmap != null) {
+                                    if (displayedBitmap != null) {
                                         Image(
-                                            bitmap = bitmap.asImageBitmap(),
+                                            bitmap = displayedBitmap.asImageBitmap(),
                                             contentDescription = null,
+                                            colorFilter = if (isNightMode) nightInvertMatrix else null,
                                             modifier = Modifier
                                                 .width(targetWidth)
                                                 .height(targetHeight)
@@ -432,6 +512,30 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
         }
     }
 
+    if (showViewOptions) {
+        ModalBottomSheet(onDismissRequest = { showViewOptions = false }) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Görünüm", style = MaterialTheme.typography.titleLarge)
+
+                Text("Tema", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(selected = !isNightMode, onClick = { isNightMode = false }, label = { Text("Gündüz") })
+                    FilterChip(selected = isNightMode, onClick = { isNightMode = true }, label = { Text("Gece") })
+                }
+
+                Text("Döndür", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    IconButton(onClick = { rotationDegrees = (rotationDegrees - 90 + 360) % 360 }) { Text("↺") }
+                    Text("$rotationDegrees°", modifier = Modifier.padding(horizontal = 12.dp))
+                    IconButton(onClick = { rotationDegrees = (rotationDegrees + 90) % 360 }) { Text("↻") }
+                }
+            }
+        }
+    }
+
     if (showGoToPage) {
         AlertDialog(
             onDismissRequest = { showGoToPage = false },
@@ -445,7 +549,7 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                 )
             },
             confirmButton = {
-                androidx.compose.material3.Button(onClick = {
+                Button(onClick = {
                     val target = goToPageText.toIntOrNull()
                     if (target != null && target in 1..pageInfos.size) {
                         scope.launch { listState.animateScrollToItem(target - 1) }
@@ -455,9 +559,50 @@ fun PdfViewerScreen(uri: Uri, onBack: () -> Unit) {
                 }) { Text("Git") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showGoToPage = false; goToPageText = "" }) {
+                TextButton(onClick = { showGoToPage = false; goToPageText = "" }) {
                     Text("İptal")
                 }
+            }
+        )
+    }
+
+    if (needsPassword) {
+        var passwordInput by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = onBack,
+            title = { Text("Şifre Korumalı PDF") },
+            text = {
+                Column {
+                    if (!PDF_PASSWORD_SUPPORTED) {
+                        Text("Bu PDF şifre korumalı. Şifreli PDF desteği Android 15 ve üzeri gerektiriyor.")
+                    } else {
+                        if (passwordWasWrong) {
+                            Text(
+                                "Şifre yanlış, tekrar deneyin.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                        OutlinedTextField(
+                            value = passwordInput,
+                            onValueChange = { passwordInput = it },
+                            label = { Text("Şifre") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (PDF_PASSWORD_SUPPORTED) {
+                    Button(onClick = { passwordAttempt = passwordInput }) { Text("Aç") }
+                } else {
+                    Button(onClick = onBack) { Text("Tamam") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onBack) { Text("İptal") }
             }
         )
     }
